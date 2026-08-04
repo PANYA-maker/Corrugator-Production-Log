@@ -3,13 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ระบบบันทึกผลการผลิตกระดาษลูกฟูก (Production Tracker)</title>
+  <title>ระบบบันทึกและสรุปภาพรวมการผลิตกระดาษลูกฟูก (Corrugator Production App)</title>
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Vue 3 CDN -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
   <!-- SheetJS (XLSX) CDN -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Chart.js DataLabels Plugin CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
   <!-- Google Fonts Sarabun -->
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -20,26 +24,42 @@
 <body class="bg-slate-100 min-h-screen text-slate-800">
   <div id="app" v-cloak class="max-w-[96%] mx-auto px-4 py-6">
     
-    <!-- Top Bar Header -->
+    <!-- Floating Toast Notification -->
+    <div v-if="notification.show" :class="[
+      'fixed top-5 right-5 z-[100] px-4 py-3 rounded-xl shadow-xl font-semibold text-xs text-white flex items-center gap-2 border transition-all duration-300 transform scale-100',
+      notification.type === 'success' ? 'bg-emerald-600 border-emerald-500' : notification.type === 'error' ? 'bg-rose-600 border-rose-500' : 'bg-slate-800 border-slate-700'
+    ]">
+      <span class="text-base">{{ notification.type === 'success' ? '✅' : notification.type === 'error' ? '❌' : 'ℹ️' }}</span>
+      <span>{{ notification.message }}</span>
+      <button @click="notification.show = false" class="ml-2 text-white/70 hover:text-white font-bold">&times;</button>
+    </div>
+
+    <!-- Top Header & App Navigation Bar -->
     <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-      <div>
-        <div class="flex items-center space-x-3">
-          <div class="p-3 bg-blue-600 text-white rounded-lg shadow font-bold text-xl">
-            🏭
-          </div>
-          <div>
-            <h1 class="text-2xl font-bold text-slate-900">ระบบบันทึกผลการเดินงานจริง (Corrugator Production Log)</h1>
-            <p class="text-xs text-slate-500">นำเข้าแผนการผลิตจากไฟล์ Excel (รองรับ YUELI, BHS, Fosber และไฟล์แผนผลิตทุกรูปแบบ)</p>
-          </div>
+      <div class="flex items-center space-x-3">
+        <div class="p-3 bg-blue-600 text-white rounded-lg shadow font-bold text-xl">
+          🏭
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-slate-900">ระบบบันทึกและสรุปภาพรวมการผลิตกระดาษลูกฟูก</h1>
+          <p class="text-xs text-slate-500">Corrugator Production Tracking & Analytics System</p>
         </div>
       </div>
 
+      <!-- Navigation Tabs & Utility Buttons -->
       <div class="flex flex-wrap items-center gap-2">
-        <button @click="showColumnConfigModal = true" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5">
-          <span>⚙️ จัดเรียง / เพิ่ม-ลดคอลัมน์</span>
-        </button>
+        <!-- Tab Switcher Group -->
+        <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <button @click="switchTab('log')" :class="['px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5', activeTab === 'log' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900']">
+            <span>📝</span> บันทึกผลการเดินงาน
+          </button>
+          <button @click="switchTab('dashboard')" :class="['px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5', activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900']">
+            <span>📊</span> แดชบอร์ดสรุปผล
+          </button>
+        </div>
+
         <button @click="showConfigModal = true" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5">
-          <span>🔗 ตั้งค่า Google Sheet</span>
+          <span>🔗 ตั้งค่า Google Sheet / CSV</span>
         </button>
         <button @click="showHelpModal = true" class="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg transition border border-blue-200">
           <span>❓ คู่มือ Apps Script</span>
@@ -47,14 +67,16 @@
       </div>
     </header>
 
-    <!-- Main Content Area -->
-    <div class="space-y-6">
+    <!-- ================================================================= -->
+    <!-- TAB 1: PRODUCTION LOG (หน้าลงบันทึกข้อมูลการเดินงานจริง) -->
+    <!-- ================================================================= -->
+    <div v-show="activeTab === 'log'" class="space-y-6">
 
-      <!-- Step 1: Drag & Drop File Upload & Filter Controls -->
+      <!-- Step 1: File Upload & Filter Controls -->
       <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <h2 class="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
           <span class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">1</span>
-          โยนไฟล์แผนการผลิต (Import Excel PLAN)
+          นำเข้าไฟล์แผนการผลิต (Import Excel PLAN)
         </h2>
 
         <div 
@@ -75,7 +97,7 @@
           </div>
         </div>
 
-        <!-- Sheet Selector -->
+        <!-- Sheet Selector & Column Config Trigger -->
         <div v-if="availableSheets.length > 0" class="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-2">
             <label class="text-xs font-bold text-slate-700 whitespace-nowrap">📄 เลือกชีทข้อมูล:</label>
@@ -88,7 +110,7 @@
             <span class="text-slate-500">คอลัมน์แสดงผลที่ตั้งค่าไว้:</span>
             <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold font-mono">{{ activeColumns.length }} คอลัมน์</span>
             <button @click="showColumnConfigModal = true" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-xs shadow-sm transition">
-              ⚙️ ปรับแต่งคอลัมน์
+              ⚙️ จัดเรียง / เพิ่ม-ลดคอลัมน์
             </button>
           </div>
         </div>
@@ -132,12 +154,22 @@
               <span class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">2</span>
               ทีมผลิตลงบันทึกการเดินงานจริง
             </h2>
-            <p class="text-xs text-slate-500">กรอกข้อมูลการเดินงานจริงในแต่ละรายการ แล้วเลือกออเดอร์เพื่อบันทึกลง Google Sheet</p>
+            <p class="text-xs text-slate-500">เลือกเครื่องจักรเพื่อเปลี่ยนทุกรายการอัตโนมัติ กรอกข้อมูลเดินจริง แล้วเลือกออเดอร์เพื่อบันทึกลง Google Sheet</p>
           </div>
 
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Global Machine Dropdown Selector -->
+            <div class="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
+              <label class="text-xs font-bold text-slate-700 whitespace-nowrap">🏭 เลือกเครื่องจักร:</label>
+              <select v-model="globalMachine" @change="applyGlobalMachine" class="px-2 py-0.5 bg-white border border-slate-300 rounded text-xs font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none">
+                <option value="YUELI">YUELI</option>
+                <option value="BHS">BHS</option>
+                <option value="ISOWA">ISOWA</option>
+              </select>
+            </div>
+
             <button @click="setBatchDateAndShift" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
-              ⚡ เติมวันที่และกะปัจจุบันทั้งหมด
+              ⚡ เติมวันที่/กะ/เครื่องจักรทั้งหมด
             </button>
             <button @click="toggleSelectAll" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
               {{ isAllSelected ? 'ยกเลิกเลือกทั้งหมด' : 'เลือกทั้งหมด' }}
@@ -164,6 +196,7 @@
                 <th class="p-2.5 bg-blue-100 text-blue-900 min-w-[180px]">สาเหตุ / หมายเหตุ</th>
                 <th class="p-2.5 bg-blue-100 text-blue-900 min-w-[130px]">วันที่เดินจริง</th>
                 <th class="p-2.5 bg-blue-100 text-blue-900 min-w-[100px]">กะที่เดิน</th>
+                <th class="p-2.5 bg-blue-100 text-blue-900 min-w-[100px]">เครื่องจักร</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-200">
@@ -178,13 +211,11 @@
                   {{ getDisplayValue(item, col) }}
                 </td>
 
-                <!-- Actual Production Inputs in exact requested order -->
-                <!-- 1. Speed ทำได้จริง -->
+                <!-- Actual Production Inputs -->
                 <td class="p-2 border-l-2 border-blue-400 bg-white">
                   <input type="number" v-model.number="item.actualSpeed" placeholder="0" class="w-full px-2 py-1 border border-slate-300 rounded text-xs text-right font-bold text-slate-900 focus:ring-1 focus:ring-blue-500">
                 </td>
 
-                <!-- 2. ผลต่าง Speed -->
                 <td class="p-2.5 text-center bg-white font-bold">
                   <span v-if="item.actualSpeed !== '' && item.actualSpeed !== null" :class="getVarianceClass(item)">
                     {{ getVarianceText(item) }}
@@ -192,7 +223,6 @@
                   <span v-else class="text-slate-400 font-normal">-</span>
                 </td>
 
-                <!-- 3. สาเหตุ / หมายเหตุ -->
                 <td class="p-2 bg-white">
                   <select v-model="item.cause" class="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 mb-1">
                     <option value="ปกติ">ปกติ (ตามแผน)</option>
@@ -207,16 +237,22 @@
                   <input v-if="item.cause.includes('อื่นๆ')" type="text" v-model="item.customNotes" placeholder="ระบุสาเหตุ..." class="w-full px-2 py-1 border border-slate-300 rounded text-[11px]">
                 </td>
 
-                <!-- 4. วันที่เดินจริง -->
                 <td class="p-2 bg-white">
                   <input type="date" v-model="item.actualDate" class="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500">
                 </td>
                 
-                <!-- 5. กะที่เดิน (กะ A / กะ B) -->
                 <td class="p-2 bg-white">
                   <select v-model="item.shift" class="w-full px-2 py-1 border border-slate-300 rounded text-xs font-semibold focus:ring-1 focus:ring-blue-500">
                     <option value="กะ A">กะ A</option>
                     <option value="กะ B">กะ B</option>
+                  </select>
+                </td>
+
+                <td class="p-2 bg-white">
+                  <select v-model="item.machine" class="w-full px-2 py-1 border border-slate-300 rounded text-xs font-bold text-slate-800 focus:ring-1 focus:ring-blue-500">
+                    <option value="YUELI">YUELI</option>
+                    <option value="BHS">BHS</option>
+                    <option value="ISOWA">ISOWA</option>
                   </select>
                 </td>
               </tr>
@@ -241,6 +277,271 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- TAB 2: DASHBOARD (หน้าสรุปภาพรวมและวิเคราะห์ผลการผลิต) -->
+    <!-- ================================================================= -->
+    <div v-show="activeTab === 'dashboard'" class="space-y-6">
+
+      <!-- Dashboard Controls & Date Filters -->
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+        <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 flex-1">
+            <!-- Date From -->
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">📅 วันที่เริ่มต้น:</label>
+              <input type="date" v-model="dashFilterDateStart" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+
+            <!-- Date To -->
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">📅 วันที่สิ้นสุด:</label>
+              <input type="date" v-model="dashFilterDateEnd" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+
+            <!-- Machine Filter -->
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">🏭 เครื่องจักร:</label>
+              <select v-model="dashFilterMachine" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="ALL">ทั้งหมด (All Machines)</option>
+                <option value="YUELI">YUELI</option>
+                <option value="BHS">BHS</option>
+                <option value="ISOWA">ISOWA</option>
+              </select>
+            </div>
+
+            <!-- Shift Filter -->
+            <div>
+              <label class="block text-xs font-bold text-slate-600 mb-1">⏱️ กะการทำงาน:</label>
+              <select v-model="dashFilterShift" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
+                <option value="ALL">ทั้งหมด (ทุกกะ)</option>
+                <option value="กะ A">กะ A</option>
+                <option value="กะ B">กะ B</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-end gap-2">
+            <button @click="fetchDataFromGoogleSheet" :disabled="isLoadingDashboard" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1.5">
+              <span v-if="isLoadingDashboard" class="animate-spin">⏳</span>
+              <span>🔄 ดึงข้อมูลล่าสุด</span>
+            </button>
+            <button @click="resetDashFilters" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition border border-slate-200">
+              🔄 รีเซ็ต
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Metric Cards Grid -->
+      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        
+        <!-- Card 1: Total Orders -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">จำนวนออเดอร์ทั้งหมด</p>
+            <h3 class="text-3xl font-extrabold text-slate-900 mt-1">{{ metrics.totalOrders.toLocaleString() }} <span class="text-xs font-normal text-slate-400">รายการ</span></h3>
+            <p class="text-[11px] text-slate-500 mt-1">ข้อมูลตามเงื่อนไขที่เลือก</p>
+          </div>
+          <div class="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center text-2xl font-bold">
+            📦
+          </div>
+        </div>
+
+        <!-- Card 2: Faster Than Plan -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-emerald-600 uppercase tracking-wide">ออเดอร์ที่เร็วกว่า/ตามแผน</p>
+            <h3 class="text-3xl font-extrabold text-emerald-600 mt-1">{{ metrics.fasterOrders.toLocaleString() }} <span class="text-xs font-normal text-emerald-700">รายการ</span></h3>
+            <p class="text-[11px] text-slate-500 mt-1">Speed จริง &ge; Speed แผน</p>
+          </div>
+          <div class="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-2xl font-bold">
+            🚀
+          </div>
+        </div>
+
+        <!-- Card 3: Slower Than Plan -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-rose-600 uppercase tracking-wide">ออเดอร์ที่ช้ากว่าแผน</p>
+            <h3 class="text-3xl font-extrabold text-rose-600 mt-1">{{ metrics.slowerOrders.toLocaleString() }} <span class="text-xs font-normal text-rose-700">รายการ</span></h3>
+            <p class="text-[11px] text-slate-500 mt-1">Speed จริง &lt; Speed แผน</p>
+          </div>
+          <div class="w-12 h-12 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center text-2xl font-bold">
+            ⚠️
+          </div>
+        </div>
+
+        <!-- Card 4: Performance Rate vs Target 70% -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden">
+          <div class="flex justify-between items-start">
+            <div>
+              <p class="text-xs font-semibold text-indigo-600 uppercase tracking-wide">เปอร์เซ็นต์ที่ทำได้จริง</p>
+              <div class="flex items-baseline gap-2 mt-1">
+                <h3 class="text-3xl font-extrabold text-indigo-900">{{ metrics.perfRate.toFixed(1) }}%</h3>
+                <span class="text-xs text-slate-500 font-semibold">เป้าหมาย: {{ TARGET_GOAL }}%</span>
+              </div>
+            </div>
+            <div class="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-xl">
+              🎯
+            </div>
+          </div>
+
+          <!-- Diff Badge -->
+          <div class="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs font-bold">
+            <span class="text-slate-500 font-medium text-[11px]">ส่วนต่างจากเป้าหมาย (Diff):</span>
+            <span :class="['px-2 py-0.5 rounded-full text-xs font-bold flex items-center gap-1', metrics.diffRate >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800']">
+              <span>{{ metrics.diffRate >= 0 ? '▲ +' : '▼ ' }}</span>
+              <span>{{ metrics.diffRate.toFixed(1) }}%</span>
+            </span>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- Trend Chart Card -->
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <span>📈</span> กราฟแนวโน้มเปอร์เซ็นต์ประสิทธิภาพการผลิต (Performance Trend)
+            </h2>
+            <p class="text-xs text-slate-500">แสดงค่าเปอร์เซ็นต์ผลิตได้ตามแผนเปรียบเทียบกับเส้นเป้าหมาย {{ TARGET_GOAL }}%</p>
+          </div>
+
+          <!-- Grouping View Switcher -->
+          <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button @click="setGroupMode('daily')" :class="['px-3 py-1.5 text-xs font-bold rounded-lg transition', groupMode === 'daily' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900']">
+              📅 รายวัน
+            </button>
+            <button @click="setGroupMode('weekly')" :class="['px-3 py-1.5 text-xs font-bold rounded-lg transition', groupMode === 'weekly' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900']">
+              🗓️ ราย Week (อา.-ส.)
+            </button>
+            <button @click="setGroupMode('monthly')" :class="['px-3 py-1.5 text-xs font-bold rounded-lg transition', groupMode === 'monthly' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900']">
+              📊 รายเดือน
+            </button>
+          </div>
+        </div>
+
+        <!-- Chart Canvas Container -->
+        <div class="relative h-80 sm:h-96 w-full bg-slate-50/50 p-3 rounded-xl border border-slate-100">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Detailed Consolidated Data Table -->
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <span>📑</span> ตารางรายละเอียดรายการเดินงานจริงทั้งหมด
+            </h2>
+            <p class="text-xs text-slate-500">รวมข้อมูลแผน ผลิตจริง ผลต่าง Speed สาเหตุ และเครื่องจักรไว้ในตารางเดียว</p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <!-- Search Box -->
+            <input type="text" v-model="dashTableSearch" placeholder="🔍 ค้นหา ลูกค้า / Order / เกรด / สาเหตุ..." class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs w-64 focus:ring-2 focus:ring-indigo-500 outline-none">
+            <button @click="exportDashboardToExcel" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-sm">
+              📊 ส่งออก Excel
+            </button>
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="overflow-x-auto rounded-lg border border-slate-200">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
+                <th class="p-2.5 text-center w-12">ลำดับ</th>
+                <th class="p-2.5">วันที่ / กะ / เครื่องจักร</th>
+                <th class="p-2.5">Prod Order / ลูกค้า</th>
+                <th class="p-2.5 text-center">ลอน / สเปกกระดาษ</th>
+                <th class="p-2.5 text-center">ขนาด (กว้างxยาวxเมตร)</th>
+                <th class="p-2.5 text-right bg-blue-50/70">Speed แผน</th>
+                <th class="p-2.5 text-right bg-emerald-50/70">Speed จริง</th>
+                <th class="p-2.5 text-center">ผลต่าง Speed</th>
+                <th class="p-2.5">สาเหตุ / หมายเหตุ</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200">
+              <tr v-for="(row, idx) in dashPaginatedRows" :key="idx" class="hover:bg-slate-50 transition">
+                <td class="p-2.5 text-center text-slate-500 font-medium">{{ (dashCurrentPage - 1) * dashPageSize + idx + 1 }}</td>
+                
+                <td class="p-2.5 whitespace-nowrap">
+                  <div class="font-bold text-slate-900">{{ formatDateDisplay(row.actualDate) }}</div>
+                  <div class="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                    <span class="px-1.5 py-0.5 bg-slate-200 text-slate-800 rounded font-bold text-[10px]">{{ row.shift || 'กะ A' }}</span>
+                    <span class="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold text-[10px]">{{ row.machine || 'YUELI' }}</span>
+                  </div>
+                </td>
+
+                <td class="p-2.5">
+                  <div class="font-bold text-indigo-900">{{ row.prodOrder || '-' }}</div>
+                  <div class="text-[11px] text-slate-600 truncate max-w-[200px]" :title="row.customer">{{ row.customer || '-' }}</div>
+                </td>
+
+                <td class="p-2.5 text-center">
+                  <span class="px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded-md text-xs">{{ row.flute || '-' }}</span>
+                  <div class="text-[10px] text-slate-500 mt-1 font-mono max-w-[180px] truncate" :title="row.paperSpec">
+                    {{ row.paperSpec || '-' }}
+                  </div>
+                </td>
+
+                <td class="p-2.5 text-center whitespace-nowrap">
+                  <div class="font-semibold text-slate-800">{{ row.width || 0 }} &times; {{ row.length || 0 }} mm</div>
+                  <div class="text-[11px] text-slate-500 font-bold font-mono text-emerald-700">{{ (row.totalMeters || 0).toLocaleString() }} เมตร</div>
+                </td>
+
+                <td class="p-2.5 text-right font-bold text-slate-700 bg-blue-50/30 font-mono">
+                  {{ row.planSpeed || 0 }} <span class="text-[10px] font-normal text-slate-400">m/m</span>
+                </td>
+
+                <td class="p-2.5 text-right font-bold text-slate-900 bg-emerald-50/30 font-mono">
+                  {{ row.actualSpeed || 0 }} <span class="text-[10px] font-normal text-slate-400">m/m</span>
+                </td>
+
+                <td class="p-2.5 text-center whitespace-nowrap font-bold">
+                  <span :class="['px-2 py-0.5 rounded text-xs font-mono', getDashVarianceClass(row)]">
+                    {{ getDashVarianceText(row) }}
+                  </span>
+                </td>
+
+                <td class="p-2.5 text-slate-700 max-w-[220px]">
+                  <div class="font-medium text-xs">{{ row.cause || 'ปกติ' }}</div>
+                  <div v-if="row.customNotes" class="text-[11px] text-slate-400 italic truncate">{{ row.customNotes }}</div>
+                </td>
+              </tr>
+
+              <!-- Empty State -->
+              <tr v-if="dashFilteredRows.length === 0">
+                <td colspan="9" class="p-8 text-center text-slate-400">
+                  <div class="text-3xl mb-1">📭</div>
+                  <p class="text-sm font-semibold">ไม่พบข้อมูลตามตัวกรองที่เลือก</p>
+                  <p class="text-xs">ลองปรับเงื่อนไขวันที่ หรือตั้งค่า Web App URL เพื่อดึงข้อมูลจริงจาก Google Sheet</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination Footer -->
+        <div v-if="dashFilteredRows.length > 0" class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+          <div>
+            แสดง {{ (dashCurrentPage - 1) * dashPageSize + 1 }} ถึง {{ Math.min(dashCurrentPage * dashPageSize, dashFilteredRows.length) }} จากทั้งหมด {{ dashFilteredRows.length }} รายการ
+          </div>
+
+          <div class="flex items-center gap-1">
+            <button @click="dashCurrentPage = 1" :disabled="dashCurrentPage === 1" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 disabled:opacity-30 rounded font-bold">«</button>
+            <button @click="dashCurrentPage--" :disabled="dashCurrentPage === 1" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 disabled:opacity-30 rounded font-bold">‹</button>
+            <span class="px-3 py-1 font-bold text-slate-800">หน้า {{ dashCurrentPage }} / {{ dashTotalPages }}</span>
+            <button @click="dashCurrentPage++" :disabled="dashCurrentPage === dashTotalPages" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 disabled:opacity-30 rounded font-bold">›</button>
+            <button @click="dashCurrentPage = dashTotalPages" :disabled="dashCurrentPage === dashTotalPages" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 disabled:opacity-30 rounded font-bold">»</button>
+          </div>
+        </div>
+      </section>
+
     </div>
 
     <!-- Modal 1: Column Manager & Reorder Modal -->
@@ -300,13 +601,20 @@
     <div v-if="showConfigModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
         <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
-          <span>⚙️</span> ตั้งค่า Google Apps Script Web App URL
+          <span>⚙️</span> ตั้งค่าแหล่งข้อมูล Google Sheet / Web App URL
         </h3>
-        <p class="text-xs text-slate-500">วาง URL ที่ได้จากการ Deploy Google Apps Script Web App เพื่อเชื่อมต่อฐานข้อมูล Google Sheet</p>
+        <p class="text-xs text-slate-500">ใส่ Google Apps Script Web App URL เพื่อส่ง/ดึงข้อมูลผลการผลิตได้แบบเรียลไทม์</p>
         
         <div>
-          <label class="block text-xs font-semibold text-slate-700 mb-1">Web App URL:</label>
-          <input type="text" v-model="webAppUrl" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500">
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Google Apps Script Web App URL:</label>
+          <input type="text" v-model="webAppUrl" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500 font-mono">
+        </div>
+
+        <div class="bg-slate-50 p-3 rounded-lg border border-slate-200 flex items-center justify-between">
+          <span class="text-xs text-slate-600 font-medium">สลับใช้ Web App URL ตั้งต้น:</span>
+          <button @click="useDefaultScriptUrl" class="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded border border-indigo-200">
+            📌 ใช้ลิงก์หลัก
+          </button>
         </div>
 
         <div class="flex justify-end gap-2 pt-4 border-t">
@@ -322,48 +630,46 @@
         <h3 class="text-lg font-bold text-slate-900">📖 วิธีติดตั้ง Google Apps Script ใน Google Sheet</h3>
         
         <ol class="list-decimal list-inside text-xs text-slate-700 space-y-2">
-          <li>เปิด **Google Sheet** ใหม่ที่ต้องการบันทึกข้อมูล</li>
+          <li>เปิด **Google Sheet** ที่ต้องการบันทึกข้อมูล</li>
           <li>ไปที่เมนู **ส่วนขยาย (Extensions)** &gt; **Apps Script**</li>
           <li>ลบโค้ดเดิมออกทั้งหมด แล้วนำโค้ดด้านล่างนี้ไปวาง:</li>
         </ol>
 
         <!-- Code Snippet Container -->
         <div class="bg-slate-900 text-slate-100 p-4 rounded-lg text-[11px] font-mono overflow-x-auto relative">
-          <pre>function doPost(e) {
+          <pre>// ======================================================
+// 1. รับข้อมูลบันทึกจากหน้า Log (POST)
+// ======================================================
+function doPost(e) {
   try {
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var payload = JSON.parse(e.postData.contents);
     var rows = payload.rows;
     var headers = payload.headers || [];
     
-    // สร้าง Header ถ้าเป็นชีทว่าง
     if (sheet.getLastRow() === 0) {
       var headerRow = ["Timestamp"];
       for (var h = 0; h &lt; headers.length; h++) {
         headerRow.push(headers[h]);
       }
-      headerRow.push("Speed จริง", "ผลต่าง Speed", "สาเหตุ / หมายเหตุ", "วันที่เดินจริง", "กะที่เดิน");
+      headerRow.push("Speed จริง", "ผลต่าง Speed", "สาเหตุ / หมายเหตุ", "วันที่เดินจริง", "กะที่เดิน", "เครื่องจักร");
       sheet.appendRow(headerRow);
     }
     
-    // บันทึกข้อมูลแต่ละแถว
     for (var i = 0; i &lt; rows.length; i++) {
       var r = rows[i];
       var dataRow = [new Date()];
-      
-      // ดึงค่าตามคอลัมน์ไดนามิก
       for (var c = 0; c &lt; r.customVals.length; c++) {
         dataRow.push(r.customVals[c]);
       }
-      
       dataRow.push(
         r.actualSpeed,
         r.actualSpeed - r.planSpeed,
         r.cause === 'อื่นๆ (ระบุในหมายเหตุ)' ? r.customNotes : r.cause,
         r.actualDate,
-        r.shift
+        r.shift,
+        r.machine || 'YUELI'
       );
-      
       sheet.appendRow(dataRow);
     }
     
@@ -373,6 +679,51 @@
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+// ======================================================
+// 2. ส่งข้อมูลให้หน้า Dashboard (GET / JSONP)
+// ======================================================
+function doGet(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var data = sheet.getDataRange().getDisplayValues();
+    var rows = [];
+    
+    if (data.length &gt; 1) {
+      var headers = data[0];
+      for (var i = 1; i &lt; data.length; i++) {
+        var row = data[i];
+        var obj = {};
+        for (var j = 0; j &lt; headers.length; j++) {
+          var cleanKey = String(headers[j]).trim();
+          obj[cleanKey] = row[j];
+        }
+        rows.push(obj);
+      }
+    }
+    
+    var result = { status: "success", data: rows };
+    var callback = e &amp;&amp; e.parameter ? e.parameter.callback : null;
+    
+    if (callback) {
+      return ContentService.createTextOutput(callback + '(' + JSON.stringify(result) + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    } else {
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  } catch (err) {
+    var errResult = { status: "error", message: err.toString() };
+    var callback = e &amp;&amp; e.parameter ? e.parameter.callback : null;
+    if (callback) {
+      return ContentService.createTextOutput(callback + '(' + JSON.stringify(errResult) + ')')
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    } else {
+      return ContentService.createTextOutput(JSON.stringify(errResult))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
 }</pre>
         </div>
 
@@ -380,7 +731,7 @@
           <li>กดปุ่ม **การทำให้ใช้งานได้ (Deploy)** &gt; **การทำให้ใช้งานได้ใหม่ (New deployment)**</li>
           <li>เลือกประเภทเป็น **เว็บแอป (Web app)**</li>
           <li>กำหนด **ผู้ที่มีสิทธิ์เข้าถึง (Who has access)** = **ทุกคน (Anyone)**</li>
-          <li>กด **ทำให้ใช้งานได้ (Deploy)** แล้วคัดลอก **URL เว็บแอป** มาใส่ในเมนูตั้งค่าของเว็บนี้</li>
+          <li>กด **ทำให้ใช้งานได้ (Deploy)** แล้วนำ URL มาใส่ในระบบ</li>
         </ol>
 
         <div class="flex justify-end pt-2">
@@ -391,22 +742,19 @@
 
   </div>
 
+  <!-- JavaScript Logic -->
   <script>
-    const { createApp, ref, computed, onMounted } = Vue;
+    // Register ChartDataLabels plugin globally
+    if (typeof ChartDataLabels !== 'undefined') {
+      Chart.register(ChartDataLabels);
+    }
 
-    // Default requested columns mapping:
-    // 1: ลำดับที่ (Col 1 -> index 0)
-    // 2: Prod Order No (Col 3 -> index 2)
-    // 3: ลอน (Col 9 -> index 8)
-    // 4: M5 (Col 10 -> index 9)
-    // 5: M4 (Col 11 -> index 10)
-    // 6: M3 (Col 12 -> index 11)
-    // 7: M2 (Col 13 -> index 12)
-    // 8: M1 (Col 14 -> index 13)
-    // 9: กว้าง W (Col 20 -> index 19)
-    // 10: ยาว L (Col 22 -> index 21)
-    // 11: ยาวรวม(เมตร) (Col 24 -> index 23)
-    // 12: Speed แผน (Col 42 -> index 41)
+    const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
+
+    const TARGET_GOAL = 70.0; // 70% Target Goal for Dashboard
+    const DEFAULT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyvtJRqwlWcdSXMBokotd8A7X5KkSLNd0o2e497hPZGpuS8SvIIxw5Cxp7sTgXOZGDGSA/exec';
+
+    // Default requested columns mapping for Tab 1
     const DEFAULT_COLUMNS = [
       { id: 'c1', label: 'ลำดับที่', colIdx: 0 },
       { id: 'c2', label: 'Prod Order No', colIdx: 2 },
@@ -424,88 +772,123 @@
 
     createApp({
       setup() {
+        // App Tab State: 'log' or 'dashboard'
+        const activeTab = ref('log');
+
+        /* ------------------ COMMON GLOBAL STATE ------------------ */
+        const webAppUrl = ref(localStorage.getItem('gas_webapp_url') || DEFAULT_WEB_APP_URL);
+        const showConfigModal = ref(false);
+        const showHelpModal = ref(false);
+        const notification = ref({ show: false, message: '', type: 'success' });
+
+        const showNotification = (msg, type = 'success') => {
+          notification.value = { show: true, message: msg, type };
+          setTimeout(() => { notification.value.show = false; }, 4000);
+        };
+
+        const useDefaultScriptUrl = () => {
+          webAppUrl.value = DEFAULT_WEB_APP_URL;
+          showNotification('ตั้งค่าใช้ Web App URL หลักเรียบร้อยแล้ว', 'info');
+        };
+
+        const saveConfig = () => {
+          localStorage.setItem('gas_webapp_url', webAppUrl.value.trim());
+          showConfigModal.value = false;
+          showNotification('บันทึกแหล่งข้อมูลเรียบร้อยแล้ว', 'success');
+          if (activeTab.value === 'dashboard') {
+            fetchDataFromGoogleSheet();
+          }
+        };
+
+        /* ------------------ TAB 1: LOGGING STATE ------------------ */
         const isDragging = ref(false);
         const fileName = ref('');
         const rawOrders = ref([]);
-        const minLength = ref(0);
+        const minLength = ref(800);
         const selectedFlute = ref('ALL');
         const searchCustomer = ref('');
+        const globalMachine = ref('YUELI');
         const isSubmitting = ref(false);
-
-        const showConfigModal = ref(false);
-        const showHelpModal = ref(false);
         const showColumnConfigModal = ref(false);
-
-        const webAppUrl = ref(localStorage.getItem('gas_webapp_url') || '');
 
         const workbookRef = ref(null);
         const availableSheets = ref([]);
         const selectedSheetName = ref('');
-
         const todayStr = new Date().toISOString().split('T')[0];
-
-        // Active Column Config (Persisted in LocalStorage)
         const activeColumns = ref([]);
 
-        // Load or initialize column config
-        const loadColumnConfig = () => {
-          const saved = localStorage.getItem('corrugator_columns_v3');
-          if (saved) {
-            try {
-              activeColumns.value = JSON.parse(saved);
-            } catch (e) {
-              activeColumns.value = [...DEFAULT_COLUMNS];
+        /* ------------------ TAB 2: DASHBOARD STATE ------------------ */
+        const rawSheetData = ref([]);
+        const isLoadingDashboard = ref(false);
+        const dashFilterDateStart = ref('');
+        const dashFilterDateEnd = ref('');
+        const dashFilterMachine = ref('ALL');
+        const dashFilterShift = ref('ALL');
+        const groupMode = ref('daily');
+        const dashTableSearch = ref('');
+        const dashCurrentPage = ref(1);
+        const dashPageSize = ref(10);
+        let chartInstance = null;
+
+        /* ------------------ TAB SWITCHING & CHART RESIZE ------------------ */
+        const switchTab = (tabName) => {
+          activeTab.value = tabName;
+          if (tabName === 'dashboard') {
+            if (rawSheetData.value.length === 0) {
+              fetchDataFromGoogleSheet();
+            } else {
+              renderChart();
             }
-          } else {
-            activeColumns.value = [...DEFAULT_COLUMNS];
           }
+        };
+
+        /* ------------------ TAB 1 LOGIC & METHODS ------------------ */
+        const applyGlobalMachine = () => {
+          filteredOrders.value.forEach(item => { item.machine = globalMachine.value; });
+        };
+
+        const loadColumnConfig = () => {
+          try {
+            const saved = localStorage.getItem('gas_column_config');
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                activeColumns.value = parsed;
+                return;
+              }
+            }
+          } catch (e) {}
+          activeColumns.value = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
         };
 
         const saveColumnConfig = () => {
-          localStorage.setItem('corrugator_columns_v3', JSON.stringify(activeColumns.value));
+          localStorage.setItem('gas_column_config', JSON.stringify(activeColumns.value));
           showColumnConfigModal.value = false;
-          alert('บันทึกการจัดเรียงคอลัมน์เรียบร้อยแล้ว');
+          showNotification('บันทึกการตั้งค่าคอลัมน์เรียบร้อยแล้ว', 'success');
         };
 
         const resetDefaultColumns = () => {
-          if (confirm('ต้องการคืนค่าคอลัมน์เป็นค่าเริ่มต้นหรือไม่?')) {
-            activeColumns.value = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
-            localStorage.removeItem('corrugator_columns_v3');
+          activeColumns.value = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+          localStorage.setItem('gas_column_config', JSON.stringify(activeColumns.value));
+          showNotification('คืนค่าเริ่มต้นเรียบร้อยแล้ว', 'info');
+        };
+
+        const addNewColumn = () => { activeColumns.value.push({ id: 'c_' + Date.now(), label: 'คอลัมน์ใหม่', colIdx: 0 }); };
+        const removeColumn = (idx) => { activeColumns.value.splice(idx, 1); };
+        const moveColumnUp = (idx) => {
+          if (idx > 0) {
+            const temp = activeColumns.value[idx];
+            activeColumns.value[idx] = activeColumns.value[idx - 1];
+            activeColumns.value[idx - 1] = temp;
           }
         };
-
-        const addNewColumn = () => {
-          const newId = 'c_' + Date.now();
-          activeColumns.value.push({
-            id: newId,
-            label: 'คอลัมน์ใหม่',
-            colIdx: 0
-          });
-        };
-
-        const removeColumn = (index) => {
-          activeColumns.value.splice(index, 1);
-        };
-
-        const moveColumnUp = (index) => {
-          if (index > 0) {
-            const temp = activeColumns.value[index];
-            activeColumns.value[index] = activeColumns.value[index - 1];
-            activeColumns.value[index - 1] = temp;
+        const moveColumnDown = (idx) => {
+          if (idx < activeColumns.value.length - 1) {
+            const temp = activeColumns.value[idx];
+            activeColumns.value[idx] = activeColumns.value[idx + 1];
+            activeColumns.value[idx + 1] = temp;
           }
         };
-
-        const moveColumnDown = (index) => {
-          if (index < activeColumns.value.length - 1) {
-            const temp = activeColumns.value[index];
-            activeColumns.value[index] = activeColumns.value[index + 1];
-            activeColumns.value[index + 1] = temp;
-          }
-        };
-
-        onMounted(() => {
-          loadColumnConfig();
-        });
 
         const handleFileDrop = (e) => {
           isDragging.value = false;
@@ -528,7 +911,6 @@
               workbookRef.value = workbook;
               availableSheets.value = workbook.SheetNames;
 
-              // Priority match sheet with 'PLAN', 'YUELI', or first sheet
               const targetSheet = workbook.SheetNames.find(name => {
                 const upper = name.trim().toUpperCase();
                 return upper.includes('PLAN') || upper.includes('YUELI') || upper.includes('ลอน');
@@ -537,8 +919,7 @@
               selectedSheetName.value = targetSheet;
               processCurrentSheet();
             } catch (err) {
-              console.error(err);
-              alert('เกิดข้อผิดพลาดในการอ่านไฟล์ Excel: ' + err.message);
+              showNotification('เกิดข้อผิดพลาดในการอ่านไฟล์ Excel: ' + err.message, 'error');
             }
           };
           reader.readAsArrayBuffer(file);
@@ -550,36 +931,33 @@
           const worksheet = workbookRef.value.Sheets[selectedSheetName.value];
           if (!worksheet) return;
 
-          // Convert sheet to 2D matrix array
           const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
           if (!rawData || rawData.length === 0) {
-            alert('ไม่พบข้อมูลในชีทนี้');
+            showNotification('ไม่พบข้อมูลในชีทนี้', 'error');
             return;
           }
 
-          let parsedItems = [];
+          let speedColIdx = 41; // ค่าเริ่มต้น Col 42
+          const speedColObj = activeColumns.value.find(c => c.label.includes('Speed') || c.label.includes('แผน'));
+          if (speedColObj && speedColObj.colIdx !== undefined) {
+            speedColIdx = speedColObj.colIdx;
+          }
 
-          // Scan rows to extract data
+          let parsedItems = [];
           for (let r = 0; r < rawData.length; r++) {
             const row = rawData[r];
             if (!row || row.length === 0) continue;
 
-            // Check if row has valid order / numeric sequence (Col 1 = index 0, Col 3 = index 2)
             const col1Val = row[0] !== undefined ? String(row[0]).trim() : '';
             const col3Val = row[2] !== undefined ? String(row[2]).trim() : '';
             const col24Val = row[23] !== undefined ? String(row[23]).replace(/,/g, '').replace(/[^\d.]/g, '') : '';
 
-            // Skip header or total rows
             if (!col1Val && !col3Val) continue;
             if (col1Val.toLowerCase().includes('ลำดับ') || col3Val.toLowerCase().includes('order') || col1Val.toLowerCase().includes('รวม')) continue;
 
-            // Extract key search & filter values:
-            // - Col 24 (index 23): ยาวรวม(เมตร)
-            // - Col 42 (index 41): Speed แผน
-            // - Col 5 (index 4): ชื่อลูกค้า
-            // - Col 9 (index 8): ลอน
             const totalLength = parseFloat(col24Val) || 0;
-            const planSpeed = row[41] !== undefined ? (parseFloat(String(row[41]).replace(/,/g, '').replace(/[^\d.]/g, '')) || 0) : 0;
+            const rawSpeedVal = row[speedColIdx] !== undefined ? row[speedColIdx] : (row[41] !== undefined ? row[41] : 0);
+            const planSpeed = parseFloat(String(rawSpeedVal).replace(/,/g, '').replace(/[^\d.]/g, '')) || 0;
             const customer = row[4] !== undefined ? String(row[4]).trim() : '';
             const flute = row[8] !== undefined ? String(row[8]).trim().toUpperCase() : '';
 
@@ -589,9 +967,10 @@
               planSpeed,
               customer,
               flute,
+              machine: globalMachine.value || 'YUELI',
               actualDate: todayStr,
               shift: 'กะ A',
-              actualSpeed: planSpeed,
+              actualSpeed: planSpeed > 0 ? planSpeed : '',
               cause: 'ปกติ',
               customNotes: '',
               selected: true
@@ -616,13 +995,11 @@
           return Array.from(flutes);
         });
 
-        // Filtered Orders using ยาวรวม Col 24 and ชื่อลูกค้า Col 5
         const filteredOrders = computed(() => {
           return rawOrders.value.filter(item => {
             const matchLength = item.totalLength >= minLength.value;
             const matchFlute = selectedFlute.value === 'ALL' || item.flute === selectedFlute.value;
             const matchCustomer = !searchCustomer.value || item.customer.toLowerCase().includes(searchCustomer.value.toLowerCase());
-
             return matchLength && matchFlute && matchCustomer;
           });
         });
@@ -639,6 +1016,7 @@
           filteredOrders.value.forEach(i => {
             i.actualDate = todayStr;
             i.shift = 'กะ A';
+            i.machine = globalMachine.value;
           });
         };
 
@@ -655,15 +1033,9 @@
           return 'text-red-600 bg-red-50 px-2 py-0.5 rounded';
         };
 
-        const saveConfig = () => {
-          localStorage.setItem('gas_webapp_url', webAppUrl.value.trim());
-          showConfigModal.value = false;
-          alert('บันทึก Web App URL เรียบร้อย');
-        };
-
         const submitToGoogleSheet = async () => {
           if (!webAppUrl.value) {
-            alert('กรุณาตั้งค่า Google Apps Script Web App URL ก่อน');
+            showNotification('กรุณาตั้งค่า Google Apps Script Web App URL ก่อน', 'error');
             showConfigModal.value = true;
             return;
           }
@@ -676,6 +1048,7 @@
             const headers = activeColumns.value.map(c => c.label);
             const payloadRows = selectedRows.map(r => ({
               customVals: activeColumns.value.map(c => getDisplayValue(r, c)),
+              machine: r.machine || 'YUELI',
               actualSpeed: r.actualSpeed,
               planSpeed: r.planSpeed,
               cause: r.cause,
@@ -691,10 +1064,10 @@
               body: JSON.stringify({ headers, rows: payloadRows })
             });
 
-            alert(`ส่งข้อมูลเข้า Google Sheet เรียบร้อยแล้วจำนวน ${selectedRows.length} รายการ!`);
+            showNotification(`ส่งข้อมูลเข้า Google Sheet เรียบร้อยแล้วจำนวน ${selectedRows.length} รายการ!`, 'success');
             selectedRows.forEach(r => r.selected = false);
           } catch (err) {
-            alert('เกิดข้อผิดพลาดในการส่งข้อมูล: ' + err.message);
+            showNotification('เกิดข้อผิดพลาดในการส่งข้อมูล: ' + err.message, 'error');
           } finally {
             isSubmitting.value = false;
           }
@@ -714,6 +1087,7 @@
             rowObj['สาเหตุ/หมายเหตุ'] = r.cause === 'อื่นๆ (ระบุในหมายเหตุ)' ? r.customNotes : r.cause;
             rowObj['วันที่เดินจริง'] = r.actualDate;
             rowObj['กะที่เดิน'] = r.shift;
+            rowObj['เครื่องจักร'] = r.machine || 'YUELI';
             return rowObj;
           });
 
@@ -723,7 +1097,538 @@
           XLSX.writeFile(wb, `Actual_Production_Log_${todayStr}.xlsx`);
         };
 
+        /* ------------------ TAB 2: DASHBOARD LOGIC & HELPERS ------------------ */
+        const getPropValue = (obj, targetKeys) => {
+          if (!obj) return undefined;
+          
+          for (const key of targetKeys) {
+            if (obj[key] !== undefined && obj[key] !== null && obj[key] !== '') {
+              return obj[key];
+            }
+          }
+          
+          const objKeys = Object.keys(obj);
+          const cleanObjKeys = objKeys.map(k => ({
+            original: k,
+            cleaned: String(k).replace(/[\uFEFF\u00A0]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase()
+          }));
+
+          for (const key of targetKeys) {
+            const cleanTarget = String(key).replace(/[\uFEFF\u00A0]/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+            
+            let found = cleanObjKeys.find(item => item.cleaned === cleanTarget);
+            if (!found) {
+              found = cleanObjKeys.find(item => item.cleaned.includes(cleanTarget) || cleanTarget.includes(item.cleaned));
+            }
+
+            if (found && obj[found.original] !== undefined && obj[found.original] !== null && obj[found.original] !== '') {
+              return obj[found.original];
+            }
+          }
+          return undefined;
+        };
+
+        const parseDateString = (val) => {
+          if (!val) return '';
+          const str = String(val).trim();
+          if (str.includes('T')) {
+            const d = new Date(str);
+            if (!isNaN(d.getTime())) {
+              const y = d.getFullYear();
+              const m = String(d.getMonth() + 1).padStart(2, '0');
+              const day = String(d.getDate()).padStart(2, '0');
+              return `${y}-${m}-${day}`;
+            }
+          }
+          if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+          if (str.includes('/')) {
+            const parts = str.split('/');
+            if (parts.length === 3) {
+              let y = parseInt(parts[2]);
+              if (y > 2500) y -= 543;
+              const m = String(parts[1]).padStart(2, '0');
+              const day = String(parts[0]).padStart(2, '0');
+              return `${y}-${m}-${day}`;
+            }
+          }
+          return str.split(' ')[0];
+        };
+
+        const fetchViaJsonp = (baseUrl) => {
+          return new Promise((resolve, reject) => {
+            const callbackName = 'gas_cb_' + Math.floor(Math.random() * 1000000);
+            const script = document.createElement('script');
+            const cleanUrl = baseUrl.trim();
+            const sep = cleanUrl.includes('?') ? '&' : '?';
+            script.src = `${cleanUrl}${sep}action=get_data&callback=${callbackName}&_t=${Date.now()}`;
+
+            const timeout = setTimeout(() => {
+              cleanup();
+              reject(new Error('JSONP Request Timeout'));
+            }, 8000);
+
+            const cleanup = () => {
+              if (window[callbackName]) delete window[callbackName];
+              if (script.parentNode) script.parentNode.removeChild(script);
+              clearTimeout(timeout);
+            };
+
+            window[callbackName] = (data) => {
+              cleanup();
+              resolve(data);
+            };
+
+            script.onerror = () => {
+              cleanup();
+              reject(new Error('JSONP Network Error'));
+            };
+
+            document.body.appendChild(script);
+          });
+        };
+
+        const loadMockDashboardData = () => {
+          const mockList = [];
+          const machines = ['YUELI', 'BHS', 'ISOWA'];
+          const flutes = ['BC', 'C'];
+          const customers = [
+            'บริษัท ยูเนียนเปเปอร์ แอนด์ แพ็คเกจจิ้ง จำกัด',
+            'บริษัท ท็อปไฟลท์ โปรดักส์ จำกัด',
+            'บริษัท กรีนคาร์ตอนบ๊อกซ์ จำกัด',
+            'บริษัท ไทย คีทาฮารา จำกัด',
+            'บริษัท แมททีเรียล สแตนดาร์ด จำกัด'
+          ];
+          const causes = ['ปกติ', 'เปลี่ยนม้วนกระดาษบ่อย', 'กระดาษขาด / มีรอยต่อ', 'ความร้อนไม่เพียงพอ', 'เครื่องจักรขัดข้อง'];
+
+          const baseDate = new Date(2026, 7, 1);
+
+          for (let i = 0; i < 45; i++) {
+            const dateObj = new Date(baseDate);
+            dateObj.setDate(baseDate.getDate() + Math.floor(i / 3));
+            const dateStr = dateObj.toISOString().split('T')[0];
+
+            const planSp = Math.floor(Math.random() * 6 + 7) * 10;
+            const actualSp = Math.random() > 0.35 ? planSp + Math.floor(Math.random() * 20) : planSp - Math.floor(Math.random() * 25);
+            const cause = actualSp < planSp ? causes[Math.floor(Math.random() * (causes.length - 1)) + 1] : 'ปกติ';
+
+            mockList.push({
+              timestamp: dateStr + 'T08:00:00.000Z',
+              prodOrder: 'PDR2608-' + String(1000 + i),
+              customer: customers[i % customers.length],
+              flute: flutes[i % flutes.length],
+              paperSpec: 'M5: KT125 / M4: CA105 / M1: CA105',
+              width: 1440,
+              length: 1740,
+              totalMeters: 800 + (i * 50) % 1500,
+              planSpeed: planSp,
+              actualSpeed: actualSp,
+              cause: cause,
+              customNotes: cause !== 'ปกติ' ? 'ชะลอความเร็วคุมคุณภาพ' : '',
+              actualDate: dateStr,
+              shift: i % 2 === 0 ? 'กะ A' : 'กะ B',
+              machine: machines[i % machines.length]
+            });
+          }
+
+          rawSheetData.value = mockList;
+          showNotification('โหลดข้อมูลตัวอย่างสำหรับแดชบอร์ดเรียบร้อยแล้ว', 'info');
+          renderChart();
+        };
+
+        const fetchDataFromGoogleSheet = async () => {
+          const targetUrl = (webAppUrl.value || DEFAULT_WEB_APP_URL).trim();
+          if (!targetUrl.startsWith('http')) {
+            showNotification('แสดงข้อมูลตัวอย่าง (กรุณาตั้งค่า URL เพื่อดึงข้อมูลจริง)', 'info');
+            loadMockDashboardData();
+            return;
+          }
+
+          isLoadingDashboard.value = true;
+          let parsedRows = null;
+
+          try {
+            if (targetUrl.includes('output=csv') || targetUrl.includes('/pub') || targetUrl.endsWith('.csv')) {
+              const response = await fetch(targetUrl);
+              if (!response.ok) throw new Error(`HTTP Error status: ${response.status}`);
+              const csvText = await response.text();
+              const workbook = XLSX.read(csvText, { type: 'string' });
+              const sheetName = workbook.SheetNames[0];
+              parsedRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+            } else {
+              const fetchUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + 'action=get_data&_t=' + Date.now();
+              const res = await fetch(fetchUrl);
+              if (res.ok) {
+                const result = await res.json();
+                if (result && result.status === 'success' && Array.isArray(result.data)) {
+                  parsedRows = result.data;
+                }
+              }
+              if (!parsedRows) {
+                const jsonpRes = await fetchViaJsonp(targetUrl);
+                if (jsonpRes && jsonpRes.status === 'success' && Array.isArray(jsonpRes.data)) {
+                  parsedRows = jsonpRes.data;
+                }
+              }
+            }
+          } catch (err) {
+            console.warn('Direct fetch failed, falling back to JSONP/Mock:', err);
+            parsedRows = null;
+          }
+
+          if (Array.isArray(parsedRows) && parsedRows.length > 0) {
+            rawSheetData.value = parsedRows.map(item => {
+              const planSpVal = getPropValue(item, [
+                'Speed แผน', 'planSpeed', 'Speedแผน', 'Speed  แผน', 'Plan Speed', 'PlanSpeed', 'speed_plan'
+              ]);
+              const actualSpVal = getPropValue(item, [
+                'Speed จริง', 'actualSpeed', 'Speedจริง', 'Speed  จริง', 'Speed ทำได้จริง', 'Actual Speed', 'ActualSpeed', 'speed_actual', 'speed'
+              ]);
+              
+              const planSp = (planSpVal !== undefined && planSpVal !== null && planSpVal !== '') 
+                ? (parseFloat(String(planSpVal).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0) 
+                : 0;
+              const actualSp = (actualSpVal !== undefined && actualSpVal !== null && actualSpVal !== '') 
+                ? (parseFloat(String(actualSpVal).replace(/,/g, '').replace(/[^\d.-]/g, '')) || 0) 
+                : 0;
+
+              const rawDate = getPropValue(item, ['วันที่เดินจริง', 'actualDate', 'Timestamp', 'วันที่']) || '';
+              const formattedDate = parseDateString(rawDate);
+
+              return {
+                timestamp: getPropValue(item, ['Timestamp', 'เวลา']) || '',
+                prodOrder: getPropValue(item, ['Prod Order No', 'prodOrder', 'Order No', 'Prod Order']) || '-',
+                customer: getPropValue(item, ['ชื่อลูกค้า', 'customer', 'ลูกค้า']) || '-',
+                flute: getPropValue(item, ['ลอน', 'flute']) || '-',
+                paperSpec: `M5:${item['M5'] || ''} M4:${item['M4'] || ''} M1:${item['M1'] || ''}`.trim(),
+                width: getPropValue(item, ['กว้าง W', 'width', 'กว้าง']) || 0,
+                length: getPropValue(item, ['ยาว L', 'length', 'ยาว']) || 0,
+                totalMeters: parseFloat(getPropValue(item, ['ยาวรวม(เมตร)', 'totalMeters', 'ยาวรวม']) || 0),
+                planSpeed: planSp,
+                actualSpeed: actualSp,
+                cause: getPropValue(item, ['สาเหตุ / หมายเหตุ', 'cause', 'สาเหตุ', 'หมายเหตุ']) || 'ปกติ',
+                customNotes: item['customNotes'] || '',
+                actualDate: formattedDate || new Date().toISOString().split('T')[0],
+                shift: getPropValue(item, ['กะที่เดิน', 'shift', 'กะ']) || 'กะ A',
+                machine: getPropValue(item, ['เครื่องจักร', 'machine']) || 'YUELI'
+              };
+            });
+            showNotification(`ดึงข้อมูลจาก Google Sheet สำเร็จจำนวน ${rawSheetData.value.length} รายการ`, 'success');
+          } else {
+            showNotification('ไม่สามารถโหลดข้อมูลจากลิงก์ที่ระบุได้ แสดงข้อมูลตัวอย่างแทน', 'info');
+            loadMockDashboardData();
+          }
+
+          isLoadingDashboard.value = false;
+          renderChart();
+        };
+
+        const dashFilteredRows = computed(() => {
+          return rawSheetData.value.filter(item => {
+            const dateMatch = (!dashFilterDateStart.value || item.actualDate >= dashFilterDateStart.value) &&
+                              (!dashFilterDateEnd.value || item.actualDate <= dashFilterDateEnd.value);
+            const machineMatch = dashFilterMachine.value === 'ALL' || item.machine === dashFilterMachine.value;
+            const shiftMatch = dashFilterShift.value === 'ALL' || item.shift === dashFilterShift.value;
+
+            const searchLower = dashTableSearch.value.toLowerCase().trim();
+            const searchMatch = !searchLower ||
+              item.customer.toLowerCase().includes(searchLower) ||
+              item.prodOrder.toLowerCase().includes(searchLower) ||
+              item.flute.toLowerCase().includes(searchLower) ||
+              item.cause.toLowerCase().includes(searchLower);
+
+            return dateMatch && machineMatch && shiftMatch && searchMatch;
+          }).sort((a, b) => {
+            // เรียงลำดับจากวันที่ล่าสุดมาก่อน (Newest Date First)
+            const dateCompare = (b.actualDate || '').localeCompare(a.actualDate || '');
+            if (dateCompare !== 0) return dateCompare;
+            return (b.timestamp || '').localeCompare(a.timestamp || '');
+          });
+        });
+
+        const metrics = computed(() => {
+          const rows = dashFilteredRows.value;
+          const totalOrders = rows.length;
+          if (totalOrders === 0) {
+            return { totalOrders: 0, fasterOrders: 0, slowerOrders: 0, perfRate: 0, diffRate: -TARGET_GOAL };
+          }
+
+          let fasterCount = 0;
+          let slowerCount = 0;
+
+          rows.forEach(item => {
+            if (item.actualSpeed >= item.planSpeed) {
+              fasterCount++;
+            } else {
+              slowerCount++;
+            }
+          });
+
+          const perfRate = (fasterCount / totalOrders) * 100;
+          const diffRate = perfRate - TARGET_GOAL;
+
+          return { totalOrders, fasterOrders: fasterCount, slowerOrders: slowerCount, perfRate, diffRate };
+        });
+
+        const getSundayToSaturdayWeekLabel = (dateStr) => {
+          const d = new Date(dateStr);
+          if (isNaN(d.getTime())) return dateStr;
+
+          const day = d.getDay();
+          const sunday = new Date(d);
+          sunday.setDate(d.getDate() - day);
+
+          const saturday = new Date(sunday);
+          saturday.setDate(sunday.getDate() + 6);
+
+          const fmt = (dt) => {
+            const m = String(dt.getMonth() + 1).padStart(2, '0');
+            const dayNum = String(dt.getDate()).padStart(2, '0');
+            return `${dayNum}/${m}`;
+          };
+
+          return `W: ${fmt(sunday)} - ${fmt(saturday)}`;
+        };
+
+        const getMonthLabel = (dateStr) => {
+          const d = new Date(dateStr);
+          if (isNaN(d.getTime())) return dateStr;
+          const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+          return `${months[d.getMonth()]} ${d.getFullYear() + 543}`;
+        };
+
+        const renderChart = () => {
+          nextTick(() => {
+            const canvasEl = document.getElementById('trendChart');
+            if (!canvasEl) return;
+
+            if (chartInstance) {
+              chartInstance.destroy();
+            }
+
+            const ctx = canvasEl.getContext('2d');
+            
+            // Create linear gradient for smooth fill under trend line
+            const gradientFill = ctx.createLinearGradient(0, 0, 0, 320);
+            gradientFill.addColorStop(0, 'rgba(79, 70, 229, 0.35)');
+            gradientFill.addColorStop(1, 'rgba(79, 70, 229, 0.0)');
+
+            const rows = [...dashFilteredRows.value].sort((a, b) => a.actualDate.localeCompare(b.actualDate));
+            const grouped = {};
+
+            rows.forEach(r => {
+              let key = r.actualDate;
+              if (groupMode.value === 'weekly') {
+                key = getSundayToSaturdayWeekLabel(r.actualDate);
+              } else if (groupMode.value === 'monthly') {
+                key = getMonthLabel(r.actualDate);
+              }
+
+              if (!grouped[key]) {
+                grouped[key] = { total: 0, pass: 0 };
+              }
+              grouped[key].total++;
+              if (r.actualSpeed >= r.planSpeed) {
+                grouped[key].pass++;
+              }
+            });
+
+            const labels = Object.keys(grouped);
+            const perfData = labels.map(lbl => {
+              const g = grouped[lbl];
+              return g.total > 0 ? parseFloat(((g.pass / g.total) * 100).toFixed(1)) : 0;
+            });
+            const targetData = labels.map(() => TARGET_GOAL);
+
+            chartInstance = new Chart(ctx, {
+              type: 'line',
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: 'เปอร์เซ็นต์ผลิตได้ตามแผนจริง (%)',
+                    data: perfData,
+                    borderColor: '#4f46e5',
+                    backgroundColor: gradientFill,
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.35,
+                    pointBackgroundColor: '#ffffff',
+                    pointBorderColor: '#4f46e5',
+                    pointBorderWidth: 3,
+                    pointRadius: 6,
+                    pointHoverRadius: 8,
+                    pointHoverBackgroundColor: '#4f46e5',
+                    pointHoverBorderColor: '#ffffff',
+                    pointHoverBorderWidth: 2,
+                    // Specific DataLabels Styling for Performance Points
+                    datalabels: {
+                      display: true,
+                      align: 'top',
+                      anchor: 'end',
+                      offset: 6,
+                      backgroundColor: '#3730a3',
+                      color: '#ffffff',
+                      borderRadius: 6,
+                      padding: { top: 3, bottom: 3, left: 7, right: 7 },
+                      font: { family: 'Sarabun', size: 11, weight: 'bold' },
+                      formatter: (value) => `${value}%`
+                    }
+                  },
+                  {
+                    label: `เส้นเป้าหมาย (${TARGET_GOAL}%)`,
+                    data: targetData,
+                    borderColor: '#e11d48',
+                    borderWidth: 2,
+                    borderDash: [6, 6],
+                    pointRadius: 0,
+                    fill: false,
+                    // Hide DataLabels for Target Line
+                    datalabels: {
+                      display: false
+                    }
+                  }
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {
+                  padding: {
+                    top: 25,
+                    right: 20,
+                    left: 10,
+                    bottom: 10
+                  }
+                },
+                scales: {
+                  y: {
+                    min: 0,
+                    max: 110,
+                    ticks: {
+                      stepSize: 20,
+                      callback: (v) => v > 100 ? '' : v + '%',
+                      font: { family: 'Sarabun', size: 11, weight: '500' },
+                      color: '#64748b'
+                    },
+                    grid: { color: 'rgba(226, 232, 240, 0.7)' }
+                  },
+                  x: {
+                    grid: { display: false },
+                    ticks: {
+                      font: { family: 'Sarabun', size: 11, weight: '600' },
+                      color: '#475569'
+                    }
+                  }
+                },
+                plugins: {
+                  tooltip: {
+                    backgroundColor: '#0f172a',
+                    titleFont: { family: 'Sarabun', size: 13, weight: 'bold' },
+                    bodyFont: { family: 'Sarabun', size: 12 },
+                    padding: 10,
+                    cornerRadius: 8,
+                    callbacks: {
+                      label: (context) => ` ${context.dataset.label}: ${context.raw}%`
+                    }
+                  },
+                  legend: {
+                    position: 'top',
+                    labels: {
+                      font: { family: 'Sarabun', size: 12, weight: 'bold' },
+                      usePointStyle: true,
+                      padding: 15
+                    }
+                  }
+                }
+              }
+            });
+          });
+        };
+
+        const setGroupMode = (mode) => {
+          groupMode.value = mode;
+          renderChart();
+        };
+
+        watch([dashFilteredRows, groupMode], () => {
+          if (activeTab.value === 'dashboard') {
+            renderChart();
+          }
+        });
+
+        const dashTotalPages = computed(() => Math.ceil(dashFilteredRows.value.length / dashPageSize.value) || 1);
+        const dashPaginatedRows = computed(() => {
+          const start = (dashCurrentPage.value - 1) * dashPageSize.value;
+          return dashFilteredRows.value.slice(start, start + dashPageSize.value);
+        });
+
+        const resetDashFilters = () => {
+          dashFilterDateStart.value = '';
+          dashFilterDateEnd.value = '';
+          dashFilterMachine.value = 'ALL';
+          dashFilterShift.value = 'ALL';
+          dashTableSearch.value = '';
+          dashCurrentPage.value = 1;
+        };
+
+        const formatDateDisplay = (dStr) => {
+          if (!dStr) return '-';
+          const parts = dStr.split('-');
+          if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+          return dStr;
+        };
+
+        const getDashVarianceText = (row) => {
+          const diff = row.actualSpeed - row.planSpeed;
+          return diff > 0 ? `+${diff}` : `${diff}`;
+        };
+
+        const getDashVarianceClass = (row) => {
+          const diff = row.actualSpeed - row.planSpeed;
+          if (diff >= 0) return 'bg-emerald-100 text-emerald-800';
+          return 'bg-rose-100 text-rose-800';
+        };
+
+        const exportDashboardToExcel = () => {
+          const dataToExport = dashFilteredRows.value.map(r => ({
+            'วันที่เดินจริง': r.actualDate,
+            'กะ': r.shift,
+            'เครื่องจักร': r.machine,
+            'Prod Order': r.prodOrder,
+            'ชื่อลูกค้า': r.customer,
+            'ลอน': r.flute,
+            'ยาวรวม(เมตร)': r.totalMeters,
+            'Speed แผน': r.planSpeed,
+            'Speed จริง': r.actualSpeed,
+            'ผลต่าง Speed': r.actualSpeed - r.planSpeed,
+            'สาเหตุ/หมายเหตุ': r.cause
+          }));
+
+          const ws = XLSX.utils.json_to_sheet(dataToExport);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'Dashboard_Summary');
+          XLSX.writeFile(wb, `Production_Summary_${todayStr}.xlsx`);
+        };
+
+        onMounted(() => {
+          loadColumnConfig();
+          if (webAppUrl.value) {
+            fetchDataFromGoogleSheet();
+          }
+        });
+
         return {
+          activeTab,
+          switchTab,
+          notification,
+          showNotification,
+          showConfigModal,
+          showHelpModal,
+          webAppUrl,
+          useDefaultScriptUrl,
+          saveConfig,
+          
+          // Tab 1
           isDragging,
           fileName,
           rawOrders,
@@ -731,15 +1636,14 @@
           selectedFlute,
           availableFlutes,
           searchCustomer,
+          globalMachine,
+          applyGlobalMachine,
           filteredOrders,
           selectedCount,
           isAllSelected,
           isSubmitting,
-          showConfigModal,
-          showHelpModal,
           showColumnConfigModal,
           activeColumns,
-          webAppUrl,
           availableSheets,
           selectedSheetName,
           handleFileDrop,
@@ -750,7 +1654,6 @@
           setBatchDateAndShift,
           getVarianceText,
           getVarianceClass,
-          saveConfig,
           saveColumnConfig,
           resetDefaultColumns,
           addNewColumn,
@@ -758,7 +1661,31 @@
           moveColumnUp,
           moveColumnDown,
           submitToGoogleSheet,
-          exportToExcel
+          exportToExcel,
+
+          // Tab 2
+          rawSheetData,
+          isLoadingDashboard,
+          dashFilterDateStart,
+          dashFilterDateEnd,
+          dashFilterMachine,
+          dashFilterShift,
+          groupMode,
+          setGroupMode,
+          dashTableSearch,
+          dashCurrentPage,
+          dashPageSize,
+          dashTotalPages,
+          dashFilteredRows,
+          dashPaginatedRows,
+          metrics,
+          TARGET_GOAL,
+          fetchDataFromGoogleSheet,
+          resetDashFilters,
+          formatDateDisplay,
+          getDashVarianceText,
+          getDashVarianceClass,
+          exportDashboardToExcel
         };
       }
     }).mount('#app');
