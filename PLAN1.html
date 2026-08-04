@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ระบบบันทึกผลการผลิตกระดาษลูกฟูก (Production Tracker)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- SheetJS (XLSX) CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Google Fonts Sarabun -->
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Sarabun', sans-serif; }
+    [v-cloak] { display: none; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+  <div id="app" v-cloak class="max-w-[96%] mx-auto px-4 py-6">
+    
+    <!-- Top Bar Header -->
+    <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <div class="flex items-center space-x-3">
+          <div class="p-3 bg-blue-600 text-white rounded-lg shadow font-bold text-xl">
+            🏭
+          </div>
+          <div>
+            <h1 class="text-2xl font-bold text-slate-900">ระบบบันทึกผลการเดินงานจริง (Corrugator Production Log)</h1>
+            <p class="text-xs text-slate-500">นำเข้าแผนการผลิตจากไฟล์ Excel (รองรับ YUELI, BHS, Fosber และไฟล์แผนผลิตทุกรูปแบบ)</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button @click="showColumnConfigModal = true" class="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5">
+          <span>⚙️ จัดเรียง / เพิ่ม-ลดคอลัมน์</span>
+        </button>
+        <button @click="showConfigModal = true" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg transition shadow-sm flex items-center gap-1.5">
+          <span>🔗 ตั้งค่า Google Sheet</span>
+        </button>
+        <button @click="showHelpModal = true" class="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg transition border border-blue-200">
+          <span>❓ คู่มือ Apps Script</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div class="space-y-6">
+
+      <!-- Step 1: Drag & Drop File Upload & Filter Controls -->
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h2 class="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <span class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">1</span>
+          โยนไฟล์แผนการผลิต (Import Excel PLAN)
+        </h2>
+
+        <div 
+          @dragover.prevent="isDragging = true" 
+          @dragleave.prevent="isDragging = false"
+          @drop.prevent="handleFileDrop"
+          :class="['border-2 border-dashed rounded-xl p-6 text-center transition cursor-pointer', isDragging ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-blue-400 bg-slate-50']"
+          @click="$refs.fileInput.click()"
+        >
+          <input type="file" ref="fileInput" @change="handleFileSelect" accept=".xlsx, .xls, .csv" class="hidden">
+          <div class="text-3xl mb-1">📁</div>
+          <p class="text-sm font-semibold text-slate-700">ลากไฟล์แผนการผลิต (.xlsx, .xls) มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</p>
+          <p class="text-xs text-slate-500 mt-1">รองรับไฟล์แผนผลิตกระดาษลูกฟูกทุกรูปแบบ ระบบตั้งค่าดึงคอลัมน์มาตรฐานให้อัตโนมัติ</p>
+          
+          <div v-if="fileName" class="mt-3 inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold" :class="rawOrders.length > 0 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'">
+            <span v-if="rawOrders.length > 0">✅ อ่านไฟล์สำเร็จ: {{ fileName }} (พบ {{ rawOrders.length }} ออเดอร์)</span>
+            <span v-else>⚠️ โหลดไฟล์ {{ fileName }} สำเร็จ แต่ยังไม่ได้ประมวลผลข้อมูล</span>
+          </div>
+        </div>
+
+        <!-- Sheet Selector -->
+        <div v-if="availableSheets.length > 0" class="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <label class="text-xs font-bold text-slate-700 whitespace-nowrap">📄 เลือกชีทข้อมูล:</label>
+            <select v-model="selectedSheetName" @change="processCurrentSheet" class="px-3 py-1 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none">
+              <option v-for="s in availableSheets" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-slate-500">คอลัมน์แสดงผลที่ตั้งค่าไว้:</span>
+            <span class="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold font-mono">{{ activeColumns.length }} คอลัมน์</span>
+            <button @click="showColumnConfigModal = true" class="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-xs shadow-sm transition">
+              ⚙️ ปรับแต่งคอลัมน์
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter Controls -->
+        <div v-if="rawOrders.length > 0" class="mt-5 pt-5 border-t border-slate-200 grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">คัดกรองความยาวขั้นต่ำ (เมตร) [ยาวรวม Col 24]</label>
+            <div class="flex items-center gap-2">
+              <input type="number" v-model.number="minLength" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none font-bold">
+              <span class="text-xs text-slate-500 whitespace-nowrap">ม. ขึ้นไป</span>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">กรองลอนกระดาษ (Flute)</label>
+            <select v-model="selectedFlute" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+              <option value="ALL">ทั้งหมด (All Flutes)</option>
+              <option v-for="f in availableFlutes" :key="f" :value="f">เฉพาะลอน {{ f }}</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">ค้นหาชื่อลูกค้า [ชื่อลูกค้า Col 5]</label>
+            <input type="text" v-model="searchCustomer" placeholder="พิมพ์ชื่อลูกค้า..." class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+
+          <div class="flex items-end">
+            <div class="w-full bg-blue-50 p-2.5 rounded-lg border border-blue-100 text-xs text-blue-800">
+              พบออเดอร์ตามเงื่อนไข: <span class="font-bold text-sm text-blue-900">{{ filteredOrders.length }}</span> รายการ
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Production Log Form Table -->
+      <div v-if="filteredOrders.length > 0" class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <span class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold">2</span>
+              ทีมผลิตลงบันทึกการเดินงานจริง
+            </h2>
+            <p class="text-xs text-slate-500">กรอกข้อมูลการเดินงานจริงในแต่ละรายการ แล้วเลือกออเดอร์เพื่อบันทึกลง Google Sheet</p>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button @click="setBatchDateAndShift" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
+              ⚡ เติมวันที่และกะปัจจุบันทั้งหมด
+            </button>
+            <button @click="toggleSelectAll" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition">
+              {{ isAllSelected ? 'ยกเลิกเลือกทั้งหมด' : 'เลือกทั้งหมด' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="overflow-x-auto rounded-lg border border-slate-200">
+          <table class="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr class="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
+                <th class="p-2.5 text-center w-10">เลือก</th>
+                
+                <!-- Dynamic Custom Columns Header -->
+                <th v-for="col in activeColumns" :key="col.id" class="p-2.5 whitespace-nowrap border-r border-slate-200">
+                  {{ col.label }}
+                  <span class="text-[10px] text-slate-400 font-normal block">(Col {{ col.colIdx + 1 }})</span>
+                </th>
+
+                <!-- Team Production Actual Inputs Headers in Exact Order -->
+                <th class="p-2.5 bg-blue-100 text-blue-900 border-l-2 border-blue-400 min-w-[110px]">Speed ทำได้จริง</th>
+                <th class="p-2.5 bg-blue-100 text-blue-900 text-center min-w-[90px]">ผลต่าง Speed</th>
+                <th class="p-2.5 bg-blue-100 text-blue-900 min-w-[180px]">สาเหตุ / หมายเหตุ</th>
+                <th class="p-2.5 bg-blue-100 text-blue-900 min-w-[130px]">วันที่เดินจริง</th>
+                <th class="p-2.5 bg-blue-100 text-blue-900 min-w-[100px]">กะที่เดิน</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200">
+              <tr v-for="(item, idx) in filteredOrders" :key="idx" :class="item.selected ? 'bg-blue-50/40' : 'hover:bg-slate-50'">
+                <!-- Selection Checkbox -->
+                <td class="p-2.5 text-center">
+                  <input type="checkbox" v-model="item.selected" class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
+                </td>
+                
+                <!-- Dynamic Plan Columns Values -->
+                <td v-for="col in activeColumns" :key="col.id" class="p-2.5 border-r border-slate-200 whitespace-nowrap font-medium text-slate-800">
+                  {{ getDisplayValue(item, col) }}
+                </td>
+
+                <!-- Actual Production Inputs in exact requested order -->
+                <!-- 1. Speed ทำได้จริง -->
+                <td class="p-2 border-l-2 border-blue-400 bg-white">
+                  <input type="number" v-model.number="item.actualSpeed" placeholder="0" class="w-full px-2 py-1 border border-slate-300 rounded text-xs text-right font-bold text-slate-900 focus:ring-1 focus:ring-blue-500">
+                </td>
+
+                <!-- 2. ผลต่าง Speed -->
+                <td class="p-2.5 text-center bg-white font-bold">
+                  <span v-if="item.actualSpeed !== '' && item.actualSpeed !== null" :class="getVarianceClass(item)">
+                    {{ getVarianceText(item) }}
+                  </span>
+                  <span v-else class="text-slate-400 font-normal">-</span>
+                </td>
+
+                <!-- 3. สาเหตุ / หมายเหตุ -->
+                <td class="p-2 bg-white">
+                  <select v-model="item.cause" class="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 mb-1">
+                    <option value="ปกติ">ปกติ (ตามแผน)</option>
+                    <option value="เปลี่ยนม้วนกระดาษบ่อย">เปลี่ยนม้วนกระดาษบ่อย</option>
+                    <option value="กระดาษขาด / มีรอยต่อ">กระดาษขาด / มีรอยต่อ</option>
+                    <option value="ความร้อนไม่เพียงพอ">ความร้อนไม่เพียงพอ</option>
+                    <option value="ปรับสเกลทับเส้นใหม่">ปรับสเกลทับเส้นใหม่</option>
+                    <option value="ปัญหาคุณภาพแป้งกาว">ปัญหาคุณภาพแป้งกาว</option>
+                    <option value="เครื่องจักรขัดข้อง">เครื่องจักรขัดข้อง</option>
+                    <option value="อื่นๆ (ระบุในหมายเหตุ)">อื่นๆ (ระบุเพิ่มเติม)</option>
+                  </select>
+                  <input v-if="item.cause.includes('อื่นๆ')" type="text" v-model="item.customNotes" placeholder="ระบุสาเหตุ..." class="w-full px-2 py-1 border border-slate-300 rounded text-[11px]">
+                </td>
+
+                <!-- 4. วันที่เดินจริง -->
+                <td class="p-2 bg-white">
+                  <input type="date" v-model="item.actualDate" class="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500">
+                </td>
+                
+                <!-- 5. กะที่เดิน (กะ A / กะ B) -->
+                <td class="p-2 bg-white">
+                  <select v-model="item.shift" class="w-full px-2 py-1 border border-slate-300 rounded text-xs font-semibold focus:ring-1 focus:ring-blue-500">
+                    <option value="กะ A">กะ A</option>
+                    <option value="กะ B">กะ B</option>
+                  </select>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Submit & Export Action Footer -->
+        <div class="mt-5 flex flex-col sm:flex-row items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+          <div class="text-xs text-slate-600">
+            เลือกไว้ <span class="font-bold text-blue-600 text-sm">{{ selectedCount }}</span> รายการ พร้อมบันทึก
+          </div>
+
+          <div class="flex items-center gap-3 w-full sm:w-auto">
+            <button @click="exportToExcel" class="w-full sm:w-auto px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition">
+              📊 ส่งออกเป็น Excel (Backup)
+            </button>
+            <button @click="submitToGoogleSheet" :disabled="selectedCount === 0 || isSubmitting" class="w-full sm:w-auto px-6 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-lg shadow transition flex items-center justify-center gap-2">
+              <span v-if="isSubmitting" class="animate-spin">⏳</span>
+              <span>🚀 บันทึกลง Google Sheet ({{ selectedCount }})</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 1: Column Manager & Reorder Modal -->
+    <div v-if="showColumnConfigModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-center border-b pb-3">
+          <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <span>⚙️</span> จัดเรียง / เพิ่ม-ลด คอลัมน์ที่แสดงผล (Column Config)
+          </h3>
+          <button @click="showColumnConfigModal = false" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+        </div>
+        
+        <p class="text-xs text-slate-600">คุณสามารถแก้ไขชื่อหัวตาราง, เลือกตำแหน่งคอลัมน์จาก Excel, สลับตำแหน่งขึ้น-ลง หรือเพิ่ม/ลดคอลัมน์ได้ เมื่อบันทึกค่าแล้วจะถูกจดจำไว้ตลอด:</p>
+
+        <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
+          <div v-for="(col, i) in activeColumns" :key="col.id" class="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200 text-xs">
+            <span class="w-6 text-center font-bold text-slate-400">{{ i + 1 }}</span>
+            
+            <div class="flex-1">
+              <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">ชื่อหัวตาราง:</label>
+              <input type="text" v-model="col.label" class="w-full px-2 py-1 border rounded bg-white font-bold text-slate-800">
+            </div>
+
+            <div class="w-48">
+              <label class="block text-[10px] text-slate-500 font-semibold mb-0.5">เลือก Col ใน Excel:</label>
+              <select v-model.number="col.colIdx" class="w-full px-2 py-1 border rounded bg-white">
+                <option v-for="cIdx in 100" :key="cIdx" :value="cIdx - 1">Col {{ cIdx }}</option>
+              </select>
+            </div>
+
+            <div class="flex items-end gap-1 pt-4">
+              <button @click="moveColumnUp(i)" :disabled="i === 0" class="p-1 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 rounded text-xs font-bold">▲</button>
+              <button @click="moveColumnDown(i)" :disabled="i === activeColumns.length - 1" class="p-1 bg-slate-200 hover:bg-slate-300 disabled:opacity-30 rounded text-xs font-bold">▼</button>
+              <button @click="removeColumn(i)" class="p-1 bg-red-100 hover:bg-red-200 text-red-600 rounded text-xs font-bold">🗑️</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center pt-3 border-t">
+          <button @click="addNewColumn" class="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-lg border border-blue-200">
+            ➕ เพิ่มคอลัมน์ใหม่
+          </button>
+
+          <div class="flex gap-2">
+            <button @click="resetDefaultColumns" class="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold rounded-lg border border-amber-200">
+              🔄 คืนค่าเริ่มต้น
+            </button>
+            <button @click="saveColumnConfig" class="px-5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow">
+              💾 บันทึกการตั้งค่าคอลัมน์
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 2: Google Sheet Config Modal -->
+    <div v-if="showConfigModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
+        <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+          <span>⚙️</span> ตั้งค่า Google Apps Script Web App URL
+        </h3>
+        <p class="text-xs text-slate-500">วาง URL ที่ได้จากการ Deploy Google Apps Script Web App เพื่อเชื่อมต่อฐานข้อมูล Google Sheet</p>
+        
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Web App URL:</label>
+          <input type="text" v-model="webAppUrl" placeholder="https://script.google.com/macros/s/.../exec" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <div class="flex justify-end gap-2 pt-4 border-t">
+          <button @click="showConfigModal = false" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-lg">ปิด</button>
+          <button @click="saveConfig" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg">บันทึกตั้งค่า</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 3: Step-by-Step Setup Guide Modal -->
+    <div v-if="showHelpModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <h3 class="text-lg font-bold text-slate-900">📖 วิธีติดตั้ง Google Apps Script ใน Google Sheet</h3>
+        
+        <ol class="list-decimal list-inside text-xs text-slate-700 space-y-2">
+          <li>เปิด **Google Sheet** ใหม่ที่ต้องการบันทึกข้อมูล</li>
+          <li>ไปที่เมนู **ส่วนขยาย (Extensions)** &gt; **Apps Script**</li>
+          <li>ลบโค้ดเดิมออกทั้งหมด แล้วนำโค้ดด้านล่างนี้ไปวาง:</li>
+        </ol>
+
+        <!-- Code Snippet Container -->
+        <div class="bg-slate-900 text-slate-100 p-4 rounded-lg text-[11px] font-mono overflow-x-auto relative">
+          <pre>function doPost(e) {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var payload = JSON.parse(e.postData.contents);
+    var rows = payload.rows;
+    var headers = payload.headers || [];
+    
+    // สร้าง Header ถ้าเป็นชีทว่าง
+    if (sheet.getLastRow() === 0) {
+      var headerRow = ["Timestamp"];
+      for (var h = 0; h &lt; headers.length; h++) {
+        headerRow.push(headers[h]);
+      }
+      headerRow.push("Speed จริง", "ผลต่าง Speed", "สาเหตุ / หมายเหตุ", "วันที่เดินจริง", "กะที่เดิน");
+      sheet.appendRow(headerRow);
+    }
+    
+    // บันทึกข้อมูลแต่ละแถว
+    for (var i = 0; i &lt; rows.length; i++) {
+      var r = rows[i];
+      var dataRow = [new Date()];
+      
+      // ดึงค่าตามคอลัมน์ไดนามิก
+      for (var c = 0; c &lt; r.customVals.length; c++) {
+        dataRow.push(r.customVals[c]);
+      }
+      
+      dataRow.push(
+        r.actualSpeed,
+        r.actualSpeed - r.planSpeed,
+        r.cause === 'อื่นๆ (ระบุในหมายเหตุ)' ? r.customNotes : r.cause,
+        r.actualDate,
+        r.shift
+      );
+      
+      sheet.appendRow(dataRow);
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: "success", count: rows.length }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</pre>
+        </div>
+
+        <ol start="4" class="list-decimal list-inside text-xs text-slate-700 space-y-2">
+          <li>กดปุ่ม **การทำให้ใช้งานได้ (Deploy)** &gt; **การทำให้ใช้งานได้ใหม่ (New deployment)**</li>
+          <li>เลือกประเภทเป็น **เว็บแอป (Web app)**</li>
+          <li>กำหนด **ผู้ที่มีสิทธิ์เข้าถึง (Who has access)** = **ทุกคน (Anyone)**</li>
+          <li>กด **ทำให้ใช้งานได้ (Deploy)** แล้วคัดลอก **URL เว็บแอป** มาใส่ในเมนูตั้งค่าของเว็บนี้</li>
+        </ol>
+
+        <div class="flex justify-end pt-2">
+          <button @click="showHelpModal = false" class="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg">เข้าใจแล้ว</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    // Default requested columns mapping:
+    // 1: ลำดับที่ (Col 1 -> index 0)
+    // 2: Prod Order No (Col 3 -> index 2)
+    // 3: ลอน (Col 9 -> index 8)
+    // 4: M5 (Col 10 -> index 9)
+    // 5: M4 (Col 11 -> index 10)
+    // 6: M3 (Col 12 -> index 11)
+    // 7: M2 (Col 13 -> index 12)
+    // 8: M1 (Col 14 -> index 13)
+    // 9: กว้าง W (Col 20 -> index 19)
+    // 10: ยาว L (Col 22 -> index 21)
+    // 11: ยาวรวม(เมตร) (Col 24 -> index 23)
+    // 12: Speed แผน (Col 42 -> index 41)
+    const DEFAULT_COLUMNS = [
+      { id: 'c1', label: 'ลำดับที่', colIdx: 0 },
+      { id: 'c2', label: 'Prod Order No', colIdx: 2 },
+      { id: 'c3', label: 'ลอน', colIdx: 8 },
+      { id: 'c4', label: 'M5', colIdx: 9 },
+      { id: 'c5', label: 'M4', colIdx: 10 },
+      { id: 'c6', label: 'M3', colIdx: 11 },
+      { id: 'c7', label: 'M2', colIdx: 12 },
+      { id: 'c8', label: 'M1', colIdx: 13 },
+      { id: 'c9', label: 'กว้าง W', colIdx: 19 },
+      { id: 'c10', label: 'ยาว L', colIdx: 21 },
+      { id: 'c11', label: 'ยาวรวม(เมตร)', colIdx: 23 },
+      { id: 'c12', label: 'Speed แผน', colIdx: 41 }
+    ];
+
+    createApp({
+      setup() {
+        const isDragging = ref(false);
+        const fileName = ref('');
+        const rawOrders = ref([]);
+        const minLength = ref(0);
+        const selectedFlute = ref('ALL');
+        const searchCustomer = ref('');
+        const isSubmitting = ref(false);
+
+        const showConfigModal = ref(false);
+        const showHelpModal = ref(false);
+        const showColumnConfigModal = ref(false);
+
+        const webAppUrl = ref(localStorage.getItem('gas_webapp_url') || '');
+
+        const workbookRef = ref(null);
+        const availableSheets = ref([]);
+        const selectedSheetName = ref('');
+
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        // Active Column Config (Persisted in LocalStorage)
+        const activeColumns = ref([]);
+
+        // Load or initialize column config
+        const loadColumnConfig = () => {
+          const saved = localStorage.getItem('corrugator_columns_v3');
+          if (saved) {
+            try {
+              activeColumns.value = JSON.parse(saved);
+            } catch (e) {
+              activeColumns.value = [...DEFAULT_COLUMNS];
+            }
+          } else {
+            activeColumns.value = [...DEFAULT_COLUMNS];
+          }
+        };
+
+        const saveColumnConfig = () => {
+          localStorage.setItem('corrugator_columns_v3', JSON.stringify(activeColumns.value));
+          showColumnConfigModal.value = false;
+          alert('บันทึกการจัดเรียงคอลัมน์เรียบร้อยแล้ว');
+        };
+
+        const resetDefaultColumns = () => {
+          if (confirm('ต้องการคืนค่าคอลัมน์เป็นค่าเริ่มต้นหรือไม่?')) {
+            activeColumns.value = JSON.parse(JSON.stringify(DEFAULT_COLUMNS));
+            localStorage.removeItem('corrugator_columns_v3');
+          }
+        };
+
+        const addNewColumn = () => {
+          const newId = 'c_' + Date.now();
+          activeColumns.value.push({
+            id: newId,
+            label: 'คอลัมน์ใหม่',
+            colIdx: 0
+          });
+        };
+
+        const removeColumn = (index) => {
+          activeColumns.value.splice(index, 1);
+        };
+
+        const moveColumnUp = (index) => {
+          if (index > 0) {
+            const temp = activeColumns.value[index];
+            activeColumns.value[index] = activeColumns.value[index - 1];
+            activeColumns.value[index - 1] = temp;
+          }
+        };
+
+        const moveColumnDown = (index) => {
+          if (index < activeColumns.value.length - 1) {
+            const temp = activeColumns.value[index];
+            activeColumns.value[index] = activeColumns.value[index + 1];
+            activeColumns.value[index + 1] = temp;
+          }
+        };
+
+        onMounted(() => {
+          loadColumnConfig();
+        });
+
+        const handleFileDrop = (e) => {
+          isDragging.value = false;
+          const files = e.dataTransfer.files;
+          if (files.length > 0) processExcel(files[0]);
+        };
+
+        const handleFileSelect = (e) => {
+          const files = e.target.files;
+          if (files.length > 0) processExcel(files[0]);
+        };
+
+        const processExcel = (file) => {
+          fileName.value = file.name;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            try {
+              const data = new Uint8Array(e.target.result);
+              const workbook = XLSX.read(data, { type: 'array' });
+              workbookRef.value = workbook;
+              availableSheets.value = workbook.SheetNames;
+
+              // Priority match sheet with 'PLAN', 'YUELI', or first sheet
+              const targetSheet = workbook.SheetNames.find(name => {
+                const upper = name.trim().toUpperCase();
+                return upper.includes('PLAN') || upper.includes('YUELI') || upper.includes('ลอน');
+              }) || workbook.SheetNames[0];
+
+              selectedSheetName.value = targetSheet;
+              processCurrentSheet();
+            } catch (err) {
+              console.error(err);
+              alert('เกิดข้อผิดพลาดในการอ่านไฟล์ Excel: ' + err.message);
+            }
+          };
+          reader.readAsArrayBuffer(file);
+        };
+
+        const processCurrentSheet = () => {
+          if (!workbookRef.value || !selectedSheetName.value) return;
+
+          const worksheet = workbookRef.value.Sheets[selectedSheetName.value];
+          if (!worksheet) return;
+
+          // Convert sheet to 2D matrix array
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+          if (!rawData || rawData.length === 0) {
+            alert('ไม่พบข้อมูลในชีทนี้');
+            return;
+          }
+
+          let parsedItems = [];
+
+          // Scan rows to extract data
+          for (let r = 0; r < rawData.length; r++) {
+            const row = rawData[r];
+            if (!row || row.length === 0) continue;
+
+            // Check if row has valid order / numeric sequence (Col 1 = index 0, Col 3 = index 2)
+            const col1Val = row[0] !== undefined ? String(row[0]).trim() : '';
+            const col3Val = row[2] !== undefined ? String(row[2]).trim() : '';
+            const col24Val = row[23] !== undefined ? String(row[23]).replace(/,/g, '').replace(/[^\d.]/g, '') : '';
+
+            // Skip header or total rows
+            if (!col1Val && !col3Val) continue;
+            if (col1Val.toLowerCase().includes('ลำดับ') || col3Val.toLowerCase().includes('order') || col1Val.toLowerCase().includes('รวม')) continue;
+
+            // Extract key search & filter values:
+            // - Col 24 (index 23): ยาวรวม(เมตร)
+            // - Col 42 (index 41): Speed แผน
+            // - Col 5 (index 4): ชื่อลูกค้า
+            // - Col 9 (index 8): ลอน
+            const totalLength = parseFloat(col24Val) || 0;
+            const planSpeed = row[41] !== undefined ? (parseFloat(String(row[41]).replace(/,/g, '').replace(/[^\d.]/g, '')) || 0) : 0;
+            const customer = row[4] !== undefined ? String(row[4]).trim() : '';
+            const flute = row[8] !== undefined ? String(row[8]).trim().toUpperCase() : '';
+
+            parsedItems.push({
+              rawRow: row,
+              totalLength,
+              planSpeed,
+              customer,
+              flute,
+              actualDate: todayStr,
+              shift: 'กะ A',
+              actualSpeed: planSpeed,
+              cause: 'ปกติ',
+              customNotes: '',
+              selected: true
+            });
+          }
+
+          rawOrders.value = parsedItems;
+        };
+
+        const getDisplayValue = (item, col) => {
+          if (!item.rawRow || item.rawRow[col.colIdx] === undefined) return '-';
+          const val = item.rawRow[col.colIdx];
+          if (val === '' || val === null) return '-';
+          if (typeof val === 'number') {
+            return Number.isInteger(val) ? val.toLocaleString() : val.toLocaleString(undefined, { maximumFractionDigits: 2 });
+          }
+          return String(val).trim();
+        };
+
+        const availableFlutes = computed(() => {
+          const flutes = new Set(rawOrders.value.map(i => i.flute).filter(f => f !== ''));
+          return Array.from(flutes);
+        });
+
+        // Filtered Orders using ยาวรวม Col 24 and ชื่อลูกค้า Col 5
+        const filteredOrders = computed(() => {
+          return rawOrders.value.filter(item => {
+            const matchLength = item.totalLength >= minLength.value;
+            const matchFlute = selectedFlute.value === 'ALL' || item.flute === selectedFlute.value;
+            const matchCustomer = !searchCustomer.value || item.customer.toLowerCase().includes(searchCustomer.value.toLowerCase());
+
+            return matchLength && matchFlute && matchCustomer;
+          });
+        });
+
+        const selectedCount = computed(() => filteredOrders.value.filter(i => i.selected).length);
+        const isAllSelected = computed(() => filteredOrders.value.length > 0 && filteredOrders.value.every(i => i.selected));
+
+        const toggleSelectAll = () => {
+          const targetState = !isAllSelected.value;
+          filteredOrders.value.forEach(i => i.selected = targetState);
+        };
+
+        const setBatchDateAndShift = () => {
+          filteredOrders.value.forEach(i => {
+            i.actualDate = todayStr;
+            i.shift = 'กะ A';
+          });
+        };
+
+        const getVarianceText = (item) => {
+          if (item.actualSpeed === '' || item.actualSpeed === null || item.actualSpeed === undefined) return '-';
+          const diff = item.actualSpeed - item.planSpeed;
+          return diff > 0 ? `+${diff}` : `${diff}`;
+        };
+
+        const getVarianceClass = (item) => {
+          if (item.actualSpeed === '' || item.actualSpeed === null || item.actualSpeed === undefined) return '';
+          const diff = item.actualSpeed - item.planSpeed;
+          if (diff >= 0) return 'text-green-600 bg-green-50 px-2 py-0.5 rounded';
+          return 'text-red-600 bg-red-50 px-2 py-0.5 rounded';
+        };
+
+        const saveConfig = () => {
+          localStorage.setItem('gas_webapp_url', webAppUrl.value.trim());
+          showConfigModal.value = false;
+          alert('บันทึก Web App URL เรียบร้อย');
+        };
+
+        const submitToGoogleSheet = async () => {
+          if (!webAppUrl.value) {
+            alert('กรุณาตั้งค่า Google Apps Script Web App URL ก่อน');
+            showConfigModal.value = true;
+            return;
+          }
+
+          const selectedRows = filteredOrders.value.filter(i => i.selected);
+          if (selectedRows.length === 0) return;
+
+          isSubmitting.value = true;
+          try {
+            const headers = activeColumns.value.map(c => c.label);
+            const payloadRows = selectedRows.map(r => ({
+              customVals: activeColumns.value.map(c => getDisplayValue(r, c)),
+              actualSpeed: r.actualSpeed,
+              planSpeed: r.planSpeed,
+              cause: r.cause,
+              customNotes: r.customNotes,
+              actualDate: r.actualDate,
+              shift: r.shift
+            }));
+
+            await fetch(webAppUrl.value, {
+              method: 'POST',
+              mode: 'no-cors',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ headers, rows: payloadRows })
+            });
+
+            alert(`ส่งข้อมูลเข้า Google Sheet เรียบร้อยแล้วจำนวน ${selectedRows.length} รายการ!`);
+            selectedRows.forEach(r => r.selected = false);
+          } catch (err) {
+            alert('เกิดข้อผิดพลาดในการส่งข้อมูล: ' + err.message);
+          } finally {
+            isSubmitting.value = false;
+          }
+        };
+
+        const exportToExcel = () => {
+          const selectedRows = filteredOrders.value.filter(i => i.selected);
+          const rowsToProcess = selectedRows.length > 0 ? selectedRows : filteredOrders.value;
+
+          const dataToExport = rowsToProcess.map(r => {
+            let rowObj = {};
+            activeColumns.value.forEach(c => {
+              rowObj[c.label] = getDisplayValue(r, c);
+            });
+            rowObj['Speed จริง'] = r.actualSpeed;
+            rowObj['ผลต่าง Speed'] = r.actualSpeed - r.planSpeed;
+            rowObj['สาเหตุ/หมายเหตุ'] = r.cause === 'อื่นๆ (ระบุในหมายเหตุ)' ? r.customNotes : r.cause;
+            rowObj['วันที่เดินจริง'] = r.actualDate;
+            rowObj['กะที่เดิน'] = r.shift;
+            return rowObj;
+          });
+
+          const ws = XLSX.utils.json_to_sheet(dataToExport);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'Actual_Production');
+          XLSX.writeFile(wb, `Actual_Production_Log_${todayStr}.xlsx`);
+        };
+
+        return {
+          isDragging,
+          fileName,
+          rawOrders,
+          minLength,
+          selectedFlute,
+          availableFlutes,
+          searchCustomer,
+          filteredOrders,
+          selectedCount,
+          isAllSelected,
+          isSubmitting,
+          showConfigModal,
+          showHelpModal,
+          showColumnConfigModal,
+          activeColumns,
+          webAppUrl,
+          availableSheets,
+          selectedSheetName,
+          handleFileDrop,
+          handleFileSelect,
+          processCurrentSheet,
+          getDisplayValue,
+          toggleSelectAll,
+          setBatchDateAndShift,
+          getVarianceText,
+          getVarianceClass,
+          saveConfig,
+          saveColumnConfig,
+          resetDefaultColumns,
+          addNewColumn,
+          removeColumn,
+          moveColumnUp,
+          moveColumnDown,
+          submitToGoogleSheet,
+          exportToExcel
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
