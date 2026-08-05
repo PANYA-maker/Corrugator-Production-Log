@@ -973,7 +973,7 @@ function doGet(e) {
               actualSpeed: planSpeed > 0 ? planSpeed : '',
               cause: 'ปกติ',
               customNotes: '',
-              selected: true
+              selected: false
             });
           }
 
@@ -1064,8 +1064,10 @@ function doGet(e) {
               body: JSON.stringify({ headers, rows: payloadRows })
             });
 
+            // ลบแถวที่ส่งข้อมูลสำเร็จออกจากรายการทั้งหมดทันที เพื่อป้องกันการบันทึกซ้ำ
+            rawOrders.value = rawOrders.value.filter(item => !selectedRows.includes(item));
+
             showNotification(`ส่งข้อมูลเข้า Google Sheet เรียบร้อยแล้วจำนวน ${selectedRows.length} รายการ!`, 'success');
-            selectedRows.forEach(r => r.selected = false);
           } catch (err) {
             showNotification('เกิดข้อผิดพลาดในการส่งข้อมูล: ' + err.message, 'error');
           } finally {
@@ -1231,6 +1233,13 @@ function doGet(e) {
           }
 
           rawSheetData.value = mockList;
+          if (mockList.length > 0) {
+            const dates = mockList.map(i => i.actualDate).filter(Boolean).sort((a, b) => b.localeCompare(a));
+            if (dates.length > 0) {
+              dashFilterDateStart.value = dates[0];
+              dashFilterDateEnd.value = dates[0];
+            }
+          }
           showNotification('โหลดข้อมูลตัวอย่างสำหรับแดชบอร์ดเรียบร้อยแล้ว', 'info');
           renderChart();
         };
@@ -1312,6 +1321,18 @@ function doGet(e) {
                 machine: getPropValue(item, ['เครื่องจักร', 'machine']) || 'YUELI'
               };
             });
+
+            if (rawSheetData.value.length > 0) {
+              const dates = rawSheetData.value
+                .map(i => i.actualDate)
+                .filter(d => d && /^\d{4}-\d{2}-\d{2}$/.test(d))
+                .sort((a, b) => b.localeCompare(a));
+              if (dates.length > 0) {
+                dashFilterDateStart.value = dates[0];
+                dashFilterDateEnd.value = dates[0];
+              }
+            }
+
             showNotification(`ดึงข้อมูลจาก Google Sheet สำเร็จจำนวน ${rawSheetData.value.length} รายการ`, 'success');
           } else {
             showNotification('ไม่สามารถโหลดข้อมูลจากลิงก์ที่ระบุได้ แสดงข้อมูลตัวอย่างแทน', 'info');
