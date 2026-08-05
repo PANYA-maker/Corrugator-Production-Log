@@ -225,16 +225,15 @@
 
                 <td class="p-2 bg-white">
                   <select v-model="item.cause" class="w-full px-2 py-1 border border-slate-300 rounded text-xs focus:ring-1 focus:ring-blue-500 mb-1">
-                    <option value="ปกติ">ปกติ (ตามแผน)</option>
-                    <option value="เปลี่ยนม้วนกระดาษบ่อย">เปลี่ยนม้วนกระดาษบ่อย</option>
-                    <option value="กระดาษขาด / มีรอยต่อ">กระดาษขาด / มีรอยต่อ</option>
+                    <option value="ปกติ (ตามแผน)">ปกติ (ตามแผน)</option>
+                    <option value="กระดาษขาด/มีรอยต่อ">กระดาษขาด/มีรอยต่อ</option>
                     <option value="ความร้อนไม่เพียงพอ">ความร้อนไม่เพียงพอ</option>
-                    <option value="ปรับสเกลทับเส้นใหม่">ปรับสเกลทับเส้นใหม่</option>
-                    <option value="ปัญหาคุณภาพแป้งกาว">ปัญหาคุณภาพแป้งกาว</option>
                     <option value="เครื่องจักรขัดข้อง">เครื่องจักรขัดข้อง</option>
-                    <option value="อื่นๆ (ระบุในหมายเหตุ)">อื่นๆ (ระบุเพิ่มเติม)</option>
+                    <option value="เปลี่ยนม้วนกระดาษบ่อย">เปลี่ยนม้วนกระดาษบ่อย</option>
+                    <option value="ปัญหาคุณภาพ">ปัญหาคุณภาพ</option>
+                    <option value="อื่นๆ">อื่นๆ (ระบุเพิ่มเติม)</option>
                   </select>
-                  <input v-if="item.cause.includes('อื่นๆ')" type="text" v-model="item.customNotes" placeholder="ระบุสาเหตุ..." class="w-full px-2 py-1 border border-slate-300 rounded text-[11px]">
+                  <input v-if="requiresDetail(item.cause)" type="text" v-model="item.customNotes" placeholder="ระบุรายละเอียดเพิ่มเติม..." class="w-full px-2 py-1 border border-slate-300 rounded text-[11px]">
                 </td>
 
                 <td class="p-2 bg-white">
@@ -830,7 +829,6 @@ function doGet(e) {
         const dashPageSize = ref(10);
         let chartInstance = null;
 
-        /* ------------------ TAB SWITCHING & CHART RESIZE ------------------ */
         const switchTab = (tabName) => {
           activeTab.value = tabName;
           if (tabName === 'dashboard') {
@@ -842,7 +840,6 @@ function doGet(e) {
           }
         };
 
-        /* ------------------ TAB 1 LOGIC & METHODS ------------------ */
         const applyGlobalMachine = () => {
           filteredOrders.value.forEach(item => { item.machine = globalMachine.value; });
         };
@@ -971,7 +968,7 @@ function doGet(e) {
               actualDate: todayStr,
               shift: 'กะ A',
               actualSpeed: planSpeed > 0 ? planSpeed : '',
-              cause: 'ปกติ',
+              cause: 'ปกติ (ตามแผน)',
               customNotes: '',
               selected: false
             });
@@ -1021,16 +1018,27 @@ function doGet(e) {
         };
 
         const getVarianceText = (item) => {
-          if (item.actualSpeed === '' || item.actualSpeed === null || item.actualSpeed === undefined) return '-';
+          if (item.actualSpeed === '' || item.actualSpeed === null) return '-';
           const diff = item.actualSpeed - item.planSpeed;
           return diff > 0 ? `+${diff}` : `${diff}`;
         };
 
         const getVarianceClass = (item) => {
-          if (item.actualSpeed === '' || item.actualSpeed === null || item.actualSpeed === undefined) return '';
+          if (item.actualSpeed === '' || item.actualSpeed === null) return '';
           const diff = item.actualSpeed - item.planSpeed;
-          if (diff >= 0) return 'text-green-600 bg-green-50 px-2 py-0.5 rounded';
-          return 'text-red-600 bg-red-50 px-2 py-0.5 rounded';
+          return diff >= 0 ? 'bg-emerald-100 text-emerald-800 rounded px-1.5 py-0.5' : 'bg-rose-100 text-rose-800 rounded px-1.5 py-0.5';
+        };
+
+        const requiresDetail = (cause) => {
+          return ['เครื่องจักรขัดข้อง', 'เปลี่ยนม้วนกระดาษบ่อย', 'ปัญหาคุณภาพ', 'อื่นๆ'].includes(cause);
+        };
+
+        const getFullCauseText = (r) => {
+          if (!r.cause) return 'ปกติ (ตามแผน)';
+          if (requiresDetail(r.cause) && r.customNotes && r.customNotes.trim()) {
+            return r.cause === 'อื่นๆ' ? r.customNotes.trim() : `${r.cause} (${r.customNotes.trim()})`;
+          }
+          return r.cause;
         };
 
         const submitToGoogleSheet = async () => {
@@ -1051,7 +1059,7 @@ function doGet(e) {
               machine: r.machine || 'YUELI',
               actualSpeed: r.actualSpeed,
               planSpeed: r.planSpeed,
-              cause: r.cause,
+              cause: getFullCauseText(r),
               customNotes: r.customNotes,
               actualDate: r.actualDate,
               shift: r.shift
@@ -1086,7 +1094,7 @@ function doGet(e) {
             });
             rowObj['Speed จริง'] = r.actualSpeed;
             rowObj['ผลต่าง Speed'] = r.actualSpeed - r.planSpeed;
-            rowObj['สาเหตุ/หมายเหตุ'] = r.cause === 'อื่นๆ (ระบุในหมายเหตุ)' ? r.customNotes : r.cause;
+            rowObj['สาเหตุ/หมายเหตุ'] = getFullCauseText(r);
             rowObj['วันที่เดินจริง'] = r.actualDate;
             rowObj['กะที่เดิน'] = r.shift;
             rowObj['เครื่องจักร'] = r.machine || 'YUELI';
@@ -1099,7 +1107,6 @@ function doGet(e) {
           XLSX.writeFile(wb, `Actual_Production_Log_${todayStr}.xlsx`);
         };
 
-        /* ------------------ TAB 2: DASHBOARD LOGIC & HELPERS ------------------ */
         const getPropValue = (obj, targetKeys) => {
           if (!obj) return undefined;
           
@@ -1359,7 +1366,6 @@ function doGet(e) {
 
             return dateMatch && machineMatch && shiftMatch && searchMatch;
           }).sort((a, b) => {
-            // เรียงลำดับจากวันที่ล่าสุดมาก่อน (Newest Date First)
             const dateCompare = (b.actualDate || '').localeCompare(a.actualDate || '');
             if (dateCompare !== 0) return dateCompare;
             return (b.timestamp || '').localeCompare(a.timestamp || '');
@@ -1428,7 +1434,6 @@ function doGet(e) {
 
             const ctx = canvasEl.getContext('2d');
             
-            // Create linear gradient for smooth fill under trend line
             const gradientFill = ctx.createLinearGradient(0, 0, 0, 320);
             gradientFill.addColorStop(0, 'rgba(79, 70, 229, 0.35)');
             gradientFill.addColorStop(1, 'rgba(79, 70, 229, 0.0)');
@@ -1481,7 +1486,6 @@ function doGet(e) {
                     pointHoverBackgroundColor: '#4f46e5',
                     pointHoverBorderColor: '#ffffff',
                     pointHoverBorderWidth: 2,
-                    // Specific DataLabels Styling for Performance Points
                     datalabels: {
                       display: true,
                       align: 'top',
@@ -1503,7 +1507,6 @@ function doGet(e) {
                     borderDash: [6, 6],
                     pointRadius: 0,
                     fill: false,
-                    // Hide DataLabels for Target Line
                     datalabels: {
                       display: false
                     }
@@ -1514,12 +1517,7 @@ function doGet(e) {
                 responsive: true,
                 maintainAspectRatio: false,
                 layout: {
-                  padding: {
-                    top: 25,
-                    right: 20,
-                    left: 10,
-                    bottom: 10
-                  }
+                  padding: { top: 25, right: 20, left: 10, bottom: 10 }
                 },
                 scales: {
                   y: {
@@ -1675,6 +1673,8 @@ function doGet(e) {
           setBatchDateAndShift,
           getVarianceText,
           getVarianceClass,
+          requiresDetail,
+          getFullCauseText,
           saveColumnConfig,
           resetDefaultColumns,
           addNewColumn,
