@@ -34,6 +34,7 @@
       <button @click="notification.show = false" class="ml-2 text-white/70 hover:text-white font-bold">&times;</button>
     </div>
 
+    <!-- Header Banner -->
     <header class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div class="flex items-center space-x-3">
         <div class="p-3 bg-blue-600 text-white rounded-lg shadow font-bold text-xl">
@@ -53,7 +54,7 @@
           <span>{{ liveClockStr }}</span>
         </div>
 
-        <!-- Tab Switcher Group (3 Tabs) -->
+        <!-- Tab Switcher Group -->
         <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
           <button @click="switchTab('log')" :class="['px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5', activeTab === 'log' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900']">
             <span>📝</span> บันทึกการเดินงาน
@@ -74,7 +75,7 @@
     </header>
 
     <!-- ================================================================= -->
-    <!-- TAB 1: PRODUCTION LOG (หน้าลงบันทึกข้อมูลการเดินงานจริง) -->
+    <!-- TAB 1: PRODUCTION LOG -->
     <!-- ================================================================= -->
     <div v-show="activeTab === 'log'" class="space-y-6">
 
@@ -164,7 +165,6 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <!-- Global Machine Dropdown Selector -->
             <div class="flex items-center gap-1.5 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm">
               <label class="text-xs font-bold text-slate-700 whitespace-nowrap">🏭 เลือกเครื่องจักร:</label>
               <select v-model="globalMachine" @change="applyGlobalMachine" class="px-2 py-0.5 bg-white border border-slate-300 rounded text-xs font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none">
@@ -189,13 +189,9 @@
             <thead>
               <tr class="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
                 <th class="p-2.5 text-center w-10">เลือก</th>
-                
-                <!-- Dynamic Custom Columns Header -->
                 <th v-for="col in activeColumns" :key="col.id" class="p-2.5 whitespace-nowrap border-r border-slate-200">
                   {{ col.label }}
                 </th>
-
-                <!-- Team Production Actual Inputs Headers in Exact Order -->
                 <th class="p-2.5 bg-blue-100 text-blue-900 border-l-2 border-blue-400 min-w-[110px]">Speed ทำได้จริง</th>
                 <th class="p-2.5 bg-blue-100 text-blue-900 text-center min-w-[90px]">ผลต่าง Speed</th>
                 <th class="p-2.5 bg-blue-100 text-blue-900 min-w-[180px]">สาเหตุ / หมายเหตุ</th>
@@ -206,17 +202,14 @@
             </thead>
             <tbody class="divide-y divide-slate-200">
               <tr v-for="(item, idx) in filteredOrders" :key="idx" :class="item.selected ? 'bg-blue-50/40' : 'hover:bg-slate-50'">
-                <!-- Selection Checkbox -->
                 <td class="p-2.5 text-center">
                   <input type="checkbox" v-model="item.selected" class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
                 </td>
                 
-                <!-- Dynamic Plan Columns Values -->
                 <td v-for="col in activeColumns" :key="col.id" class="p-2.5 border-r border-slate-200 whitespace-nowrap font-medium text-slate-800">
                   {{ getDisplayValue(item, col) }}
                 </td>
 
-                <!-- Actual Production Inputs -->
                 <td class="p-2 border-l-2 border-blue-400 bg-white">
                   <input type="number" v-model.number="item.actualSpeed" placeholder="0" class="w-full px-2 py-1 border border-slate-300 rounded text-xs text-right font-bold text-slate-900 focus:ring-1 focus:ring-blue-500">
                 </td>
@@ -284,7 +277,7 @@
     </div>
 
     <!-- ================================================================= -->
-    <!-- TAB 2: SCHEDULE TRACKER (หน้าติดตามเวลาเสร็จตามแผน & เช็กออเดอร์) -->
+    <!-- TAB 2: SCHEDULE TRACKER -->
     <!-- ================================================================= -->
     <div v-show="activeTab === 'tracker'" class="space-y-6">
 
@@ -306,8 +299,8 @@
             </div>
           </div>
 
-          <!-- Counter & Maximum Delay Time Cards Row -->
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+          <!-- Counter & Stat Cards Row -->
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-center">
             <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700">
               <div class="text-slate-400 text-[11px] font-semibold">ออเดอร์ในแผน (มีเวลาเสร็จ)</div>
               <div class="text-xl font-extrabold text-white mt-0.5">{{ trackingStats.total }}</div>
@@ -323,6 +316,14 @@
               <div class="text-xl font-extrabold text-rose-400 mt-0.5">{{ trackingStats.lateCount }}</div>
             </div>
 
+            <!-- Card: เมตรที่เลท (คำนวณจาก totalLength สอดคล้องกับตาราง) -->
+            <div class="bg-purple-950/80 p-3 rounded-lg border border-purple-800">
+              <div class="text-purple-300 text-[11px] font-semibold">📏 เมตรที่เลท</div>
+              <div class="text-lg font-extrabold text-purple-300 mt-0.5 font-mono">
+                {{ trackingStats.lateMeters.toLocaleString() }} <span class="text-xs font-normal">ม.</span>
+              </div>
+            </div>
+
             <div class="bg-indigo-950/80 p-3 rounded-lg border border-indigo-800">
               <div class="text-indigo-300 text-[11px] font-semibold">⏱️ เวลาเลทสูงสุดขณะนี้</div>
               <div class="text-lg font-extrabold text-rose-400 mt-0.5 font-mono">
@@ -336,8 +337,6 @@
       <!-- Tracker Filter Controls & Search -->
       <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
         <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-          
-          <!-- Status Filter Tabs -->
           <div class="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button @click="trackerStatusFilter = 'ALL'" :class="['px-3 py-1.5 text-xs font-bold rounded-lg transition', trackerStatusFilter === 'ALL' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900']">
               📋 ทั้งหมดที่มีเวลา ({{ trackingStats.total }})
@@ -354,7 +353,6 @@
             </button>
           </div>
 
-          <!-- Quick Actions Search -->
           <div class="flex items-center gap-2">
             <input type="text" v-model="trackerSearch" placeholder="🔍 ค้นหา Order / ลูกค้า / ลอน / ลำดับ..." class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs w-full sm:w-64 focus:ring-2 focus:ring-amber-500 outline-none">
           </div>
@@ -391,7 +389,7 @@
               <tr v-for="(item, idx) in trackerFilteredList" :key="idx" :class="[
                 item.runStatus === 'COMPLETED' ? 'bg-emerald-50/40 opacity-75' : isOrderLate(item) ? 'bg-rose-50/60' : 'hover:bg-slate-50'
               ]">
-                <!-- Quick Checkbox Completed -->
+                <!-- Quick Checkbox Completed (With Cascade Check) -->
                 <td class="p-2.5 text-center">
                   <input type="checkbox" :checked="item.runStatus === 'COMPLETED'" @change="toggleOrderCompleted(item)" class="w-5 h-5 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer">
                 </td>
@@ -408,7 +406,7 @@
                   </span>
                 </td>
 
-                <!-- Standalone Sequence Number Column -->
+                <!-- Sequence Number -->
                 <td class="p-2.5 text-center font-mono font-bold text-slate-800 border-r border-slate-200">
                   {{ getDisplayValueByLabel(item, 'ลำดับที่') }}
                 </td>
@@ -462,7 +460,7 @@
     </div>
 
     <!-- ================================================================= -->
-    <!-- TAB 3: DASHBOARD (หน้าสรุปภาพรวมและวิเคราะห์ผลการผลิต) -->
+    <!-- TAB 3: DASHBOARD -->
     <!-- ================================================================= -->
     <div v-show="activeTab === 'dashboard'" class="space-y-6">
 
@@ -470,19 +468,16 @@
       <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
         <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
           <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 flex-1">
-            <!-- Date From -->
             <div>
               <label class="block text-xs font-bold text-slate-600 mb-1">📅 วันที่เริ่มต้น:</label>
               <input type="date" v-model="dashFilterDateStart" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
             </div>
 
-            <!-- Date To -->
             <div>
               <label class="block text-xs font-bold text-slate-600 mb-1">📅 วันที่สิ้นสุด:</label>
               <input type="date" v-model="dashFilterDateEnd" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
             </div>
 
-            <!-- Machine Filter -->
             <div>
               <label class="block text-xs font-bold text-slate-600 mb-1">🏭 เครื่องจักร:</label>
               <select v-model="dashFilterMachine" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none">
@@ -493,7 +488,6 @@
               </select>
             </div>
 
-            <!-- Shift Filter -->
             <div>
               <label class="block text-xs font-bold text-slate-600 mb-1">⏱️ กะการทำงาน:</label>
               <select v-model="dashFilterShift" class="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none">
@@ -518,8 +512,6 @@
 
       <!-- Metric Cards Grid -->
       <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        
-        <!-- Card 1: Total Orders -->
         <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center justify-between">
           <div>
             <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">จำนวนออเดอร์ทั้งหมด</p>
@@ -531,7 +523,6 @@
           </div>
         </div>
 
-        <!-- Card 2: Faster Than Plan -->
         <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center justify-between">
           <div>
             <p class="text-xs font-semibold text-emerald-600 uppercase tracking-wide">ออเดอร์ที่เร็วกว่า/ตามแผน</p>
@@ -543,7 +534,6 @@
           </div>
         </div>
 
-        <!-- Card 3: Slower Than Plan -->
         <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center justify-between">
           <div>
             <p class="text-xs font-semibold text-rose-600 uppercase tracking-wide">ออเดอร์ที่ช้ากว่าแผน</p>
@@ -555,7 +545,6 @@
           </div>
         </div>
 
-        <!-- Card 4: Performance Rate vs Target 70% -->
         <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 relative overflow-hidden">
           <div class="flex justify-between items-start">
             <div>
@@ -570,7 +559,6 @@
             </div>
           </div>
 
-          <!-- Diff Badge -->
           <div class="mt-3 flex items-center justify-between border-t border-slate-100 pt-2 text-xs font-bold">
             <span class="text-slate-500 font-medium text-[11px]">ส่วนต่างจากเป้าหมาย (Diff):</span>
             <span :class="['px-2 py-0.5 rounded-full text-xs font-bold flex items-center gap-1', metrics.diffRate >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800']">
@@ -579,7 +567,6 @@
             </span>
           </div>
         </div>
-
       </section>
 
       <!-- Trend Chart Card -->
@@ -592,7 +579,6 @@
             <p class="text-xs text-slate-500">แสดงค่าเปอร์เซ็นต์ผลิตได้ตามแผนเปรียบเทียบกับเส้นเป้าหมาย {{ TARGET_GOAL }}%</p>
           </div>
 
-          <!-- Grouping View Switcher -->
           <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button @click="setGroupMode('daily')" :class="['px-3 py-1.5 text-xs font-bold rounded-lg transition', groupMode === 'daily' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900']">
               📅 รายวัน
@@ -606,7 +592,6 @@
           </div>
         </div>
 
-        <!-- Chart Canvas Container -->
         <div class="relative h-80 sm:h-96 w-full bg-slate-50/50 p-3 rounded-xl border border-slate-100">
           <canvas id="trendChart"></canvas>
         </div>
@@ -623,7 +608,6 @@
           </div>
 
           <div class="flex items-center gap-2">
-            <!-- Search Box -->
             <input type="text" v-model="dashTableSearch" placeholder="🔍 ค้นหา ลูกค้า / Order / เกรด / สาเหตุ..." class="px-3 py-1.5 border border-slate-300 rounded-lg text-xs w-64 focus:ring-2 focus:ring-indigo-500 outline-none">
             <button @click="exportDashboardToExcel" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-sm">
               📊 ส่งออก Excel
@@ -631,7 +615,6 @@
           </div>
         </div>
 
-        <!-- Table Container -->
         <div class="overflow-x-auto rounded-lg border border-slate-200">
           <table class="w-full text-left border-collapse text-xs">
             <thead>
@@ -696,7 +679,6 @@
                 </td>
               </tr>
 
-              <!-- Empty State -->
               <tr v-if="dashFilteredRows.length === 0">
                 <td colspan="9" class="p-8 text-center text-slate-400">
                   <div class="text-3xl mb-1">📭</div>
@@ -707,7 +689,6 @@
           </table>
         </div>
 
-        <!-- Pagination Footer -->
         <div v-if="dashFilteredRows.length > 0" class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
           <div>
             แสดง {{ (dashCurrentPage - 1) * dashPageSize + 1 }} ถึง {{ Math.min(dashCurrentPage * dashPageSize, dashFilteredRows.length) }} จากทั้งหมด {{ dashFilteredRows.length }} รายการ
@@ -725,7 +706,8 @@
 
     </div>
 
-    <!-- Modal 1: Column Manager & Reorder Modal -->
+    <!-- Modals -->
+    <!-- Modal 1: Column Manager Modal -->
     <div v-if="showColumnConfigModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
         <div class="flex justify-between items-center border-b pb-3">
@@ -833,7 +815,6 @@
 
     createApp({
       setup() {
-        // App Active Tab State: 'log', 'tracker', 'dashboard'
         const activeTab = ref('log');
 
         /* ------------------ LIVE CLOCK & TIMER ------------------ */
@@ -998,16 +979,14 @@
           reader.readAsArrayBuffer(file);
         };
 
-        /* HELPER: Parse Excel Decimal Time (Col 38) to HH:mm string & Date Object */
         const parseExcelCol38Time = (rawVal) => {
           if (rawVal === undefined || rawVal === null || String(rawVal).trim() === '') {
             return { timeStr: '-', finishDate: null, hasTime: false };
           }
 
-          // If it's a decimal fraction from Excel like 0.47912037037037036
           if (typeof rawVal === 'number' || (!isNaN(parseFloat(rawVal)) && isFinite(rawVal) && String(rawVal).includes('.'))) {
             const num = parseFloat(rawVal);
-            if (num >= 0 && num <= 2) { // valid time fraction of day
+            if (num >= 0 && num <= 2) {
               const totalSeconds = Math.round(num * 86400);
               const hours = Math.floor(totalSeconds / 3600) % 24;
               const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -1022,7 +1001,6 @@
             }
           }
 
-          // If it's formatted text like "11:30" or "11:30:00"
           const str = String(rawVal).trim();
           if (str.includes(':')) {
             const parts = str.split(':');
@@ -1058,8 +1036,8 @@
             speedColIdx = speedColObj.colIdx;
           }
 
-          // Col 38 specifically for Planned Finish Time (Col Index 37)
           const col38Idx = 37;
+          const col22Idx = 21;
 
           let parsedItems = [];
 
@@ -1070,23 +1048,25 @@
             const col1Val = row[0] !== undefined ? String(row[0]).trim() : '';
             const col3Val = row[2] !== undefined ? String(row[2]).trim() : '';
             const col24Val = row[23] !== undefined ? String(row[23]).replace(/,/g, '').replace(/[^\d.]/g, '') : '';
+            const col22Val = row[col22Idx] !== undefined ? String(row[col22Idx]).replace(/,/g, '').replace(/[^\d.]/g, '') : '';
 
             if (!col1Val && !col3Val) continue;
             if (col1Val.toLowerCase().includes('ลำดับ') || col3Val.toLowerCase().includes('order') || col1Val.toLowerCase().includes('รวม')) continue;
 
             const totalLength = parseFloat(col24Val) || 0;
+            const col22Meters = parseFloat(col22Val) || totalLength;
             const rawSpeedVal = row[speedColIdx] !== undefined ? row[speedColIdx] : (row[41] !== undefined ? row[41] : 0);
             const planSpeed = parseFloat(String(rawSpeedVal).replace(/,/g, '').replace(/[^\d.]/g, '')) || 0;
             const customer = row[4] !== undefined ? String(row[4]).trim() : '';
             const flute = row[8] !== undefined ? String(row[8]).trim().toUpperCase() : '';
 
-            // Read Col 38 for Plan Finish Time
             const rawCol38Val = row[col38Idx] !== undefined ? row[col38Idx] : '';
             const parsedTimeObj = parseExcelCol38Time(rawCol38Val);
 
             parsedItems.push({
               rawRow: row,
               totalLength,
+              col22Meters,
               planSpeed,
               customer,
               flute,
@@ -1099,7 +1079,7 @@
               actualSpeed: planSpeed > 0 ? planSpeed : '',
               cause: 'ปกติ (ตามแผน)',
               customNotes: '',
-              runStatus: 'PENDING', // 'PENDING', 'IN_PROGRESS', 'COMPLETED'
+              runStatus: 'PENDING',
               selected: false
             });
           }
@@ -1138,11 +1118,10 @@
           });
         });
 
-        /* ------------------ TAB 2: SCHEDULE TRACKER HELPERS & TIME DIFFERENCE ------------------ */
         const getMinutesDiffFromNow = (item) => {
           if (!item.calculatedFinishDate) return 0;
           const diffMs = nowTime.value.getTime() - item.calculatedFinishDate.getTime();
-          return Math.floor(diffMs / 60000); // positive = past plan (late), negative = future plan (remaining)
+          return Math.floor(diffMs / 60000);
         };
 
         const isOrderLate = (item) => {
@@ -1154,19 +1133,22 @@
           return rawOrders.value.filter(i => isOrderLate(i)).length;
         });
 
-        // Calculate Maximum Delay for Active Unfinished Orders in Schedule Tracker
         const trackingStats = computed(() => {
-          const list = rawOrders.value.filter(i => i.hasPlanFinishTime); // Only orders with finish time in Col 38
+          const list = rawOrders.value.filter(i => i.hasPlanFinishTime);
           const completedCount = list.filter(i => i.runStatus === 'COMPLETED').length;
           const activeUnfinishedList = list.filter(i => i.runStatus !== 'COMPLETED');
           const lateList = activeUnfinishedList.filter(i => isOrderLate(i));
 
           let maxLateMinutes = 0;
+          let lateMeters = 0;
+
           lateList.forEach(i => {
             const diff = getMinutesDiffFromNow(i);
             if (diff > maxLateMinutes) {
               maxLateMinutes = diff;
             }
+            // ใช้ totalLength (ยาวรวมเมตร) เพื่อให้ตรงกับตารางแสดงผล
+            lateMeters += (i.totalLength || 0);
           });
 
           return {
@@ -1174,6 +1156,7 @@
             completedCount,
             activeUnfinishedCount: activeUnfinishedList.length,
             lateCount: lateList.length,
+            lateMeters,
             maxLateMinutes
           };
         });
@@ -1187,7 +1170,7 @@
         };
 
         const trackerFilteredList = computed(() => {
-          return rawOrders.value.filter(item => { // Filter only orders that have a finish time in Col 38
+          return rawOrders.value.filter(item => {
             if (!item.hasPlanFinishTime) return false;
 
             let statusMatch = true;
@@ -1206,12 +1189,20 @@
           });
         });
 
+        /* CASCADE CHECK: Checking an order row checks ALL preceding rows in rawOrders */
         const toggleOrderCompleted = (item) => {
-          if (item.runStatus === 'COMPLETED') {
-            item.runStatus = 'PENDING';
-          } else {
-            item.runStatus = 'COMPLETED';
-            if (!item.actualSpeed) item.actualSpeed = item.planSpeed;
+          const targetIndex = rawOrders.value.indexOf(item);
+          if (targetIndex !== -1) {
+            if (item.runStatus !== 'COMPLETED') {
+              for (let i = 0; i <= targetIndex; i++) {
+                const order = rawOrders.value[i];
+                order.runStatus = 'COMPLETED';
+                if (!order.actualSpeed) order.actualSpeed = order.planSpeed;
+              }
+              showNotification(`เช็กเสร็จสิ้นออเดอร์ลำดับที่ ${targetIndex + 1} และรายการก่อนหน้าทั้งหมดแล้ว`, 'success');
+            } else {
+              item.runStatus = 'PENDING';
+            }
           }
         };
 
