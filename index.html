@@ -1527,6 +1527,12 @@
             const machineMatch = dashFilterMachine.value === 'ALL' || item.machine === dashFilterMachine.value;
             const shiftMatch = dashFilterShift.value === 'ALL' || item.shift === dashFilterShift.value;
 
+            // กรองออเดอร์ที่มีคำว่า "ยกเลิก" ในสาเหตุ/หมายเหตุ ออกจากการคำนวณแดชบอร์ด
+            const causeText = (item.cause || '') + ' ' + (item.customNotes || '');
+            if (causeText.includes('ยกเลิก')) {
+              return false;
+            }
+
             const searchLower = dashTableSearch.value.toLowerCase().trim();
             const searchMatch = !searchLower ||
               item.customer.toLowerCase().includes(searchLower) ||
